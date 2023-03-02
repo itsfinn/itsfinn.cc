@@ -3,9 +3,11 @@ title: "tcpdump 查看 http 请求内容"
 date: 2023-03-06T12:00:00+08:00
 isCJKLanguage: true
 Description: "tcpdump 查看 http 请求内容的几个常用命令"
-Tags: ["Go", "Effective Go"]
-Categories: ["Go"]
+Tags: ["tcpdump", "http"]
+Categories: ["tcpdump"]
 ---
+
+
 
 tcpdump 查看 http 请求内容的几个常用命令
 
