@@ -5,7 +5,7 @@
     <link>https://itsfinn.cc/tags/innodb/</link>
     <description>Recent content in InnoDB on itsfinn&#39;s blog.</description>
     <generator>Hugo -- gohugo.io</generator>
-    <language>zh-CN</language>
+    <language>en</language>
     <lastBuildDate>Sun, 12 Feb 2023 12:00:00 +0800</lastBuildDate><atom:link href="https://itsfinn.cc/tags/innodb/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>InnoDB 如何处理 AUTO_INCREMENT</title>
@@ -13,7 +13,7 @@
       <pubDate>Sun, 12 Feb 2023 12:00:00 +0800</pubDate>
       
       <guid>https://itsfinn.cc/post/innodb-auto-increment-handling/</guid>
-      <description>InnoDB 中的 AUTO_INCREMENT 处理 InnoDB 提供了一种可配置的锁定机制，可以显着提高将行添加到具有 AUTO_INCREMENT 列的表的 SQL 语句的可伸缩性和性能。要对 InnoDB 表使用 AUTO_INCREMENT 机制，必须将 AUTO_INCREMENT 列定义为某个索引的第一列或唯一列，这样就可以在表上</description>
+      <description>InnoDB 中的 AUTO_INCREMENT 处理 InnoDB 提供了一种可配置的锁定机制，可以显着提高将行添加到具有 AUTO_INCREMENT 列的表的 SQL 语句的可伸缩性和性能。要对 InnoDB 表使用 AUTO_INCREMENT 机制，必须将 AUTO_INCREMENT 列定义为某</description>
     </item>
     
   </channel>

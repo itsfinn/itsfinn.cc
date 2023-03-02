@@ -1,1 +1,2 @@
 User-agent: *
+Sitemap: https://itsfinn.cc/sitemap.xml

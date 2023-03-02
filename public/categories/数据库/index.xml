@@ -5,7 +5,7 @@
     <link>https://itsfinn.cc/categories/%E6%95%B0%E6%8D%AE%E5%BA%93/</link>
     <description>Recent content in 数据库 on itsfinn&#39;s blog.</description>
     <generator>Hugo -- gohugo.io</generator>
-    <language>zh-CN</language>
+    <language>en</language>
     <lastBuildDate>Sun, 11 Apr 2021 14:27:01 +0800</lastBuildDate><atom:link href="https://itsfinn.cc/categories/%E6%95%B0%E6%8D%AE%E5%BA%93/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>MySQL 开发规范</title>
@@ -13,7 +13,7 @@
       <pubDate>Sun, 11 Apr 2021 14:27:01 +0800</pubDate>
       
       <guid>https://itsfinn.cc/post/mysql-development-specification/</guid>
-      <description>基础规范 建表规约 索引规约 SQL规约 字段规约 基础规范 必须使用InnoDB存储引擎 支持事务、行级锁、并发性能更好、CPU及内存缓存页优化使得资源利用率更高 必须使用UTF8字符集 万国码，</description>
+      <description>基础规范 建表规约 索引规约 SQL规约 字段规约 基础规范 必须使用InnoDB存储引擎 支持事务、行级锁、并发性能更好、CPU及内存缓存页优化使得资源</description>
     </item>
     
     <item>
@@ -22,7 +22,7 @@
       <pubDate>Sat, 10 Apr 2021 15:54:53 +0800</pubDate>
       
       <guid>https://itsfinn.cc/post/transaction/</guid>
-      <description>事务的特性 事务隔离级别 ACID vs CAP 使用事务 总结 事务的特性 所谓事务，它是一个操作序列，这些操作要么都执行，要么都不执行，它是一个不可分割的工作单位。 Atomicity（原子性） 原子性是指事</description>
+      <description>事务的特性 事务隔离级别 ACID vs CAP 使用事务 总结 事务的特性 所谓事务，它是一个操作序列，这些操作要么都执行，要么都不执行，它是一个不可分割的工作单位。</description>
     </item>
     
   </channel>
