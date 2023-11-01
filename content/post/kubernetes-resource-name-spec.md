@@ -14,9 +14,10 @@ Categories: ["k8s"]
 | DNS子域名          | Pod                | Pod                | 253                | `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`    |
 |                    |                    | ConfigMap          | 253                | 同上                                                                    |
 |                    |                    | Secret             | 253                | 同上                                                                    |
+|                    |                    | EndpointSlice      | 253                | 同上                                                                    |
 |                    | 网络策略           | NetworkPolicy      | 253                | 同上                                                                    |
-| RFC 1123 标签名    | 服务               | Service            | 63                 |                                                                         |
-|                    | 命名空间           | Namespace          | 63                 |                                                                         |
+| RFC 1123 标签名    | 服务               | Service            | 63                 |   `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`                                     |
+|                    | 命名空间           | Namespace          | 63                 |  同上                                                                   |
 | RFC 1035 标签名    |                    |                    | 63                 |                                                                         |
 | 路径分段名称       |                    | Role               |                    |                                                                         |
 |                    |                    | RoleBinding        |                    |                                                                         |
