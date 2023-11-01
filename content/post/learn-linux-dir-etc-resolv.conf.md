@@ -9,6 +9,9 @@ DisableComments: false
 ---
 
 
+`/etc/resolv.conf` 文件是Linux和Unix系统中DNS客户端的重要配置文件，它定义了DNS解析器的行为。本文记录了该文件的结构和常见配置项。
+<!--more-->
+
 `/etc/resolv.conf` 文件是Linux和Unix系统中DNS客户端的重要配置文件，它定义了DNS解析器的行为。这个文件由系统管理员手动或者由某些网络服务（如DHCP）自动创建和更新。
 
 这个文件的结构相对简单，主要包括以下几种配置：
