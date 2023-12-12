@@ -643,3 +643,127 @@ Envoy还具有被配置为前向代理的能力。在前向代理配置中，网
 - 绝对URLs
 
   支持非TLS前向代理的绝对URLs。
+
+#### 2.3.3.1 路由范围
+
+范围路由允许Envoy对域和路由规则的搜索空间施加约束。
+
+`Route Scope` 将一个键与路由表相关联。
+
+对于每个请求，通过HTTP连接管理器动态计算范围键以选择路由表。
+
+与范围关联的 `RouteConfiguration` 可以使用 OnDemand 过滤器进行配置。
+
+Scoped RDS（SRDS）API包含一组Scope资源，每个Scope定义独立的路由配置，以及一个 ScopeKeyBuilder 定义的键构建算法, Envoy 使用该构建算法为每个请求查找相应范围的键。
+
+在以下静态配置的范围内，Envoy将根据分号分割Addr头值，通过等号分割它们来获取键值对，并使用找到的第一个键值对x-foo-key的值作为范围键。
+
+具体而言，如果Addr头值为foo=1;x-foo-key=bar;x-bar-key=something-else，则计算bar作为查找相应路由配置的范围键。
+
+[route-scope.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/http_routing#id1)
+```yaml
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          scoped_routes:
+            name: scope_by_addr
+            scope_key_builder:
+              fragments:
+              - header_value_extractor:
+                  name: Addr
+                  element_separator: ";"
+                  element:
+                    key: x-foo-key
+                    separator: "="
+            scoped_route_configurations_list:
+              scoped_route_configurations:
+              - on_demand: true
+                name: scoped_route_0
+                key:
+                  fragments:
+                  - string_key: bar
+                route_configuration:
+                  name: local_route
+                  virtual_hosts:
+                  - name: local_service
+                    domains: ["*"]
+                    routes:
+                    - match:
+                        prefix: "/"
+                      route:
+                        cluster: cluster_0
+```
+
+为了使键与作用域路由配置匹配，计算键中的片段数量必须与作用域路由配置中的片段数量相匹配。然后，片段按顺序匹配。
+
+> **注意：**
+>
+> 构建的键中缺少片段（视为NULL）将使请求无法匹配任何范围，即无法为请求找到任何路由条目。
+
+
+#### 2.3.3.2 路由表
+
+HTTP连接管理器配置拥有由所有配置的HTTP过滤器使用的路由表。
+
+尽管路由器过滤器是路由表的主要使用者，但其他过滤器也可以访问它，以防它们想根据请求的最终目的地做出决策。例如，内置的速率限制过滤器会参考路由表以确定是否应该基于路由调用全局速率限制服务。
+
+连接管理器确保对于特定请求，获取路由的所有调用都是稳定的，即使决策涉及随机性（例如在运行时配置路由规则的情况下）。
+
+#### 2.3.3.3 重试语义
+
+Envoy允许在路由配置以及特定请求的请求头中进行重试配置。
+
+以下是可能的配置：
+
+- 最大重试次数
+
+  Envoy可以继续重试任意次数。
+
+  重试之间的间隔由指数退避算法（默认）决定，或者基于上游服务器通过头部的反馈（如果存在）。
+
+  > **注意**
+  > 所有重试都在整个请求超时内进行。
+  > 这避免了由于大量重试而导致较长的请求时间。
+
+- 重试条件
+
+  Envoy可以根据应用程序需求在不同的条件下进行重试。例如，网络故障，所有5xx响应代码，幂等4xx响应代码等。
+
+- 重试预算
+
+  Envoy可以通过重试预算限制活动请求的比例，只有这些活动请求可以进行重试，以防止造成流量剧增。
+
+- 主机选择重试插件
+
+  可以为Envoy配置在选择主机进行重试时应用额外的逻辑。
+
+  指定重试主机谓词允许在选择特定主机时重新尝试主机选择，而重试优先级可以配置为调整用于重试的优先级的优先级负载。
+
+> **注意**
+> 
+> Envoy在存在x-envoy-overloaded时重试请求。建议配置重试预算（首选）或将最大活动重试电路断路器设置为适当值以避免重试风暴。
+
+#### 2.3.3.4 请求对冲
+
+Envoy 支持请求对冲，可以通过指定对冲策略进行启用。
+
+这意味着Envoy会并发多个上游请求，并将第一个具有可接受头的响应返回给下游。
+
+重试策略用于确定应该返回响应还是应该等待更多响应。
+
+目前，对冲只能在响应请求超时时执行。这意味着会发出重试请求而不会取消初始超时的请求，并等待延迟响应。根据重试策略的第一个“良好”响应将返回给下游。
+
+这种实现确保不会对相同的上游请求进行两次重试，如果请求超时然后导致5xx响应，则可能会创建两个可重试事件，这可能会发生。
+
+#### 2.3.3.5 优先级路由
+
+Envoy 支持在路由级别进行优先级路由。
+
+目前的优先级实现为每个优先级级别使用不同的连接池和电路断路设置，这意味着即使对于HTTP/2请求，也会对上游主机使用两个物理连接。
+
+目前支持的优先级是`default`和`high `。
