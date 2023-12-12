@@ -469,3 +469,25 @@ Envoy支持在内部处理3xx重定向，即捕获可配置的3xx重定向响应
 - 用Location标头中的值替换 `Authority`/`Host`, `Scheme`, 和 `Path` 标头。
 
 然后，将修改后的请求标头选择新的路由、通过新的过滤器链、然后与所有正常的Envoy请求一样进行过滤和发送到上游。
+
+> **警告**
+>
+> 请注意，HTTP 连接管理器会进行一次性的清理，例如删除不信任的头部信息。特定路由的头部修改将会同时应用于初始和后续的路由，即便它们相同。因此，在设置头部修改规则时要特别小心，避免头部信息被重复添加。
+
+重定向流程示例：
+
+1. 客户端向 http://foo.com/bar 发起 GET 请求。
+
+2. 上游服务器 1 携带 `Location: http://baz.com/eep` 头回复 302。
+
+3. Envoy 配置为允许原路由重定向，向上游服务器 2 发起新的 GET 请求，带着额外请求头 `x-envoy-original-url: http://foo.com/bar` 去获取 http://baz.com/eep。
+
+4. Envoy 将 http://baz.com/eep 的响应数据作为对初始请求的响应，传递给客户端。
+
+#### 2.3.1.6 超时
+
+HTTP 连接和流存在多种可设置的超时限制。有关重要超时设置的概览，请参考[问题条目](https://www.envoyproxy.io/docs/envoy/v1.28.0/faq/configuration/timeouts#faq-configuration-timeouts)。
+
+#### 2.3.1.7 HTTP 头部顺序设置
+
+Envoy 通过链表保持头部（包括伪头部，即以冒号开头的头部）的插入顺序，当头部数量较少时，这种处理方法速度非常快。
