@@ -323,3 +323,103 @@ HTTP连接管理器出于安全原因执行各种标头清理操作。
 主机选择将继续，直到配置的谓词接受主机或达到可配置的最大尝试次数。
 
 这些插件可以组合起来影响主机选择和优先级负载。与添加自定义过滤器的方式类似，Envoy也可以通过添加自定义重试插件来扩展。
+
+##### 重试配置示例：
+
+- PreviousHostsPredicate
+
+  例如，要配置重试以优先选择尚未尝试的主机，可以使用内置的PreviousHostsPredicate：
+
+[retry-previous-hosts.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/26839fd8ace62acc309681d35dab6fdd/retry-previous-hosts.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_host_predicate:
+                    - name: envoy.retry_host_predicates.previous_hosts
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+                    host_selection_retry_max_attempts: 3
+
+  clusters:
+```
+
+这将拒绝先前尝试过的主机，最多重试3次主机选择。为了处理无法找到可接受主机的情况（没有主机满足谓词）或非常不可能的情况（唯一合适的主机的相对权重非常低），对尝试次数进行限制是必要的。
+
+- OmitHostMetadataConfig
+
+  要根据主机的元数据拒绝主机，可以使用OmitHostMetadataConfig：
+
+[retry-omit-host-metadata.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/7068c28039f68b3d0e83199a72d7c98b/retry-omit-host-metadata.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_host_predicate:
+                    - name: envoy.retry_host_predicates.omit_host_metadata
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.host.omit_host_metadata.v3.OmitHostMetadataConfig
+                        metadata_match:
+                          filter_metadata:
+                            envoy.lb:
+                              key: value
+
+  clusters:
+```
+
+  这将拒绝其元数据中具有匹配（键，值）的任何主机。
+
+- PreviousPrioritiesConfig
+
+  要配置重试以在重试期间尝试其他优先级，可以使用内置的PreviousPrioritiesConfig。
+
+[retry-previous-priorities.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/b3ac02aa3ae16683880f1e6bb48df66d/retry-previous-priorities.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_priority:
+                      name: envoy.retry_priorities.previous_priorities
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.priority.previous_priorities.v3.PreviousPrioritiesConfig
+                        update_frequency: 2
+
+  clusters:
+```
+
+  这将针对后续重试尝试中尚未使用的优先级。update_frequency参数决定应重新计算优先级负载的频率。
+
+##### 组合重试策略：
+
+这些插件可以组合使用，这将同时排除之前尝试过的主机和之前尝试过的优先级。
+
+[retry-combined-hosts-priorities.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/118b46ea90fdbc43ca1844285666eb57/retry-combined-hosts-priorities.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_host_predicate:
+                    - name: envoy.retry_host_predicates.previous_hosts
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+                    host_selection_retry_max_attempts: 3
+                    retry_priority:
+                      name: envoy.retry_priorities.previous_priorities
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.priority.previous_priorities.v3.PreviousPrioritiesConfig
+                        update_frequency: 2
+
+  clusters:
+```
