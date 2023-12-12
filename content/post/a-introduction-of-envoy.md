@@ -323,3 +323,577 @@ HTTP连接管理器出于安全原因执行各种标头清理操作。
 主机选择将继续，直到配置的谓词接受主机或达到可配置的最大尝试次数。
 
 这些插件可以组合起来影响主机选择和优先级负载。与添加自定义过滤器的方式类似，Envoy也可以通过添加自定义重试插件来扩展。
+
+##### 重试配置示例：
+
+- PreviousHostsPredicate
+
+  例如，要配置重试以优先选择尚未尝试的主机，可以使用内置的PreviousHostsPredicate：
+
+[retry-previous-hosts.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/26839fd8ace62acc309681d35dab6fdd/retry-previous-hosts.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_host_predicate:
+                    - name: envoy.retry_host_predicates.previous_hosts
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+                    host_selection_retry_max_attempts: 3
+
+  clusters:
+```
+
+这将拒绝先前尝试过的主机，最多重试3次主机选择。为了处理无法找到可接受主机的情况（没有主机满足谓词）或非常不可能的情况（唯一合适的主机的相对权重非常低），对尝试次数进行限制是必要的。
+
+- OmitHostMetadataConfig
+
+  要根据主机的元数据拒绝主机，可以使用OmitHostMetadataConfig：
+
+[retry-omit-host-metadata.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/7068c28039f68b3d0e83199a72d7c98b/retry-omit-host-metadata.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_host_predicate:
+                    - name: envoy.retry_host_predicates.omit_host_metadata
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.host.omit_host_metadata.v3.OmitHostMetadataConfig
+                        metadata_match:
+                          filter_metadata:
+                            envoy.lb:
+                              key: value
+
+  clusters:
+```
+
+  这将拒绝其元数据中具有匹配（键，值）的任何主机。
+
+- PreviousPrioritiesConfig
+
+  要配置重试以在重试期间尝试其他优先级，可以使用内置的PreviousPrioritiesConfig。
+
+[retry-previous-priorities.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/b3ac02aa3ae16683880f1e6bb48df66d/retry-previous-priorities.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_priority:
+                      name: envoy.retry_priorities.previous_priorities
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.priority.previous_priorities.v3.PreviousPrioritiesConfig
+                        update_frequency: 2
+
+  clusters:
+```
+
+  这将针对后续重试尝试中尚未使用的优先级。update_frequency参数决定应重新计算优先级负载的频率。
+
+##### 组合重试策略：
+
+这些插件可以组合使用，这将同时排除之前尝试过的主机和之前尝试过的优先级。
+
+[retry-combined-hosts-priorities.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/118b46ea90fdbc43ca1844285666eb57/retry-combined-hosts-priorities.yaml)
+```yaml
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: cluster_0
+                  retry_policy:
+                    retry_host_predicate:
+                    - name: envoy.retry_host_predicates.previous_hosts
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+                    host_selection_retry_max_attempts: 3
+                    retry_priority:
+                      name: envoy.retry_priorities.previous_priorities
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.retry.priority.previous_priorities.v3.PreviousPrioritiesConfig
+                        update_frequency: 2
+
+  clusters:
+```
+
+#### 2.3.1.5 内部重定向
+
+Envoy支持在内部处理3xx重定向，即捕获可配置的3xx重定向响应，合成新的请求，将其发送到由新路由匹配指定的上游，并将重定向的响应作为对原始请求的响应返回。原始请求的头和正文将被发送到重定向的新位置。目前还不支持 Trailer。
+
+内部重定向通过在路由配置中的 `internal_redirect_policy` 字段进行配置。当重定向处理处于打开状态时，来自上游的任何3xx响应（与`redirect_response_codes` 字段值匹配）都受Envoy处理的重定向支配。
+
+如果Envoy被配置为内部重定向HTTP 303并且接收HTTP 303响应，它将分发一个无正文的HTTP GET，如果原始请求不是GET或HEAD请求。否则，Envoy将保留原始的HTTP方法。有关更多信息，请参阅 [RFC 7231 第 6.4.4 节](https://tools.ietf.org/html/rfc7231#section-6.4.4)。
+
+为了成功处理重定向，必须通过以下检查：
+
+1. 响应代码与redirect_response_codes匹配，默认为302，或一组3xx代码（301、302、303、307、308）。
+
+2. 具有有效、完全限定的URL的 `Location` 头。
+
+3. 请求必须完全由Envoy处理。
+
+4. 请求必须小于per_request_buffer_limit_bytes限制。
+
+5. allow_cross_scheme_redirect为true（默认为false），或者下游请求的 Scheme 和 `Location` 头的 Scheme 相同。
+
+6. 给定下游请求中已处理的内部重定向数量不超过该请求或重定向请求所触及的路由的max_internal_redirects。
+
+7. 所有谓词都接受目标路由。
+
+任何故障都将导致重定向传递给下游。
+
+由于重定向请求可能会在多个路由之间反弹，因此重定向链中的任何路由，如果
+
+- 未启用内部重定向，
+- 或者当重定向链达到它时，其max_internal_redirects小于或等于重定向链的长度，
+- 或者被任何谓词禁止，
+
+则将导致重定向传递给下游。
+
+可以使用 `previous_routes` 谓词和 `allow_listed_routes` 这两个谓词来创建一个DAG，该DAG定义了重定向链。具体而言，allow_listed_routes谓词定义了DAG中各个节点的边缘，而previous_routes谓词定义了边缘的“已访问”状态，这样如果需要，可以避免循环。
+
+可以使用第三个谓词safe_cross_scheme来防止HTTP -> HTTPS重定向。
+
+一旦重定向通过这些检查，将被发送到原始上游的请求标头将被修改：
+
+- 将原始请求的完全限定URL放入x-envoy-original-url标头中。
+
+- 用Location标头中的值替换 `Authority`/`Host`, `Scheme`, 和 `Path` 标头。
+
+然后，将修改后的请求标头选择新的路由、通过新的过滤器链、然后与所有正常的Envoy请求一样进行过滤和发送到上游。
+
+> **警告**
+>
+> 请注意，HTTP 连接管理器会进行一次性的清理，例如删除不信任的头部信息。特定路由的头部修改将会同时应用于初始和后续的路由，即便它们相同。因此，在设置头部修改规则时要特别小心，避免头部信息被重复添加。
+
+重定向流程示例：
+
+1. 客户端向 http://foo.com/bar 发起 GET 请求。
+
+2. 上游服务器 1 携带 `Location: http://baz.com/eep` 头回复 302。
+
+3. Envoy 配置为允许原路由重定向，向上游服务器 2 发起新的 GET 请求，带着额外请求头 `x-envoy-original-url: http://foo.com/bar` 去获取 http://baz.com/eep。
+
+4. Envoy 将 http://baz.com/eep 的响应数据作为对初始请求的响应，传递给客户端。
+
+#### 2.3.1.6 超时
+
+HTTP 连接和流存在多种可设置的超时限制。有关重要超时设置的概览，请参考[问题条目](https://www.envoyproxy.io/docs/envoy/v1.28.0/faq/configuration/timeouts#faq-configuration-timeouts)。
+
+#### 2.3.1.7 HTTP 头部顺序设置
+
+Envoy 通过链表保持头部（包括伪头部，即以冒号开头的头部）的插入顺序，当头部数量较少时，这种处理方法速度非常快。
+
+### 2.3.2 HTTP 过滤器
+
+Envoy 在连接管理器中支持 HTTP 级别的过滤器堆栈。
+
+可以在不了解底层物理协议（HTTP/1.1、HTTP/2 等）或复用功能的情况下，编写在 HTTP 级别消息上操作的过滤器。
+
+HTTP 过滤器可以是下游过滤器，与给定侦听器相关联，在路由之前对每个下游请求进行流处理，也可以是上游过滤器，与给定集群相关联，在路由器过滤器之后对每个上游请求进行流处理。
+
+有三种类型的 HTTP 级别过滤器：
+
+- 解码器
+
+  解码器过滤器在连接管理器解码请求流（标头、正文和尾部）的部分时被调用。
+
+- 编码器
+
+  编码器过滤器在连接管理器即将编码响应流（标头、正文和尾部）的部分时被调用。
+
+- 解码器/编码器
+
+  解码器/编码器过滤器在连接管理器解码请求流的部件时以及连接管理器即将编码响应流的部件时都被调用。
+
+HTTP 级别过滤器的 API 允许过滤器在不了解底层协议的情况下操作。
+
+与网络级别过滤器一样，HTTP 过滤器可以停止并继续迭代到后续过滤器。这允许更复杂的场景，如健康检查处理、调用速率限制服务、缓冲、路由、为应用程序流量生成统计信息（如 DynamoDB）等。
+
+HTTP 级别过滤器还可以在单个请求流的上下文中共享状态（静态和动态）。有关更多详细信息，请参阅[过滤器之间的数据共享](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/data_sharing_between_filters#arch-overview-data-sharing-between-filters)。
+
+> **提示：**
+>
+> 请参阅 HTTP 过滤器的配置和 protobuf 部分以获取参考文档。
+> 
+> 请参见[此处](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#extension-category-envoy-filters-http)以获取包含的过滤器。
+
+#### 2.3.2.1 过滤器排序
+
+过滤器在http_filters字段中的顺序很重要。如果过滤器按以下顺序配置（并假设所有三个过滤器都是解码器/编码器过滤器）：
+
+```yaml
+http_filters:
+  - A
+  - B
+  # The last configured filter has to be a terminal filter, as determined by the
+  # NamedHttpFilterConfigFactory::isTerminalFilterByProto(config, context) function. This is most likely the router
+  # filter.
+  - C
+```
+
+连接管理器将按以下顺序调用解码器过滤器：A、B、C。另一方面，连接管理器将以相反的顺序调用编码器过滤器：C、B、A。
+
+#### 2.3.2.2 条件过滤器配置
+
+根据传入的请求改变过滤器配置有一些支持。请参阅[复合过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/composite_filter#config-http-filters-composite)的详细信息，了解如何配置可用于给定请求的匹配树，以解析要使用的过滤器配置。
+
+#### 2.3.2.3 过滤器路由突变
+
+在下游HTTP过滤器链处理过程中，当 `decodeHeaders()` 被一个过滤器调用时，连接管理器执行路由解析并设置一个指向上游集群的缓存路由。
+
+下游过滤器具有在路由解析后直接变异此缓存路由的能力，通过`setRoute`回调和`DelegatingRoute`机制。
+
+过滤器可以创建一个`DelegatingRoute`的派生/子类来覆盖特定方法（例如，路由的超时值或路由条目的集群名称），同时保留基础路由`DelegatingRoute`的其余属性/行为。然后，可以使用`setRoute`手动将缓存路由设置为这个`DelegatingRoute`实例。此类派生类的示例可以在[ExampleDerivedDelegatingRoute](https://github.com/envoyproxy/envoy/blob/v1.28.0/test/test_common/delegating_route_utility.h)中找到。
+
+如果没有其他过滤器在链中修改缓存路由选择（例如，过滤器通常执行的操作是清除路由缓存，setRoute将不会持久存在），此路由选择将进入路由器过滤器，该过滤器将最终确定请求将被转发到的上游集群。
+
+#### 2.3.2.4 路由特定配置
+
+每个过滤器配置映射可用于提供HTTP过滤器的路由或虚拟主机或路由配置特定的配置。
+
+每个过滤器配置映射的键应与过滤器配置名称匹配。
+
+例如，给定以下HTTP过滤器配置：
+
+```yaml
+http_filters:
+- name: custom-filter-name-for-lua # Custom name be used as filter config name
+  typed_config: { ... }
+- name: envoy.filters.http.buffer # Canonical name be used as filter config name
+  typed_config: { ... }
+```
+
+`custom-filter-name-for-lua`和`envoy.filters.http.buffer`将用作查找相关每个过滤器配置映射的键。
+
+对于第一个`custom-filter-name-for-lua`过滤器，如果没有通过`custom-filter-name-for-lua`找到相关条目，我们将降级尝试使用规范过滤器名称`envoy.filters.http.lua`。这种降级是为了向后兼容，可以通过显式设置运行时标志`envoy.reloadable_features.no_downgrade_to_canonical_name`为`true`来禁用。
+
+对于第二个`envoy.filters.http.buffer`过滤器，如果没有通过`envoy.filters.http.buffer`找到相关条目，我们将不会尝试降级，因为规范过滤器名称与过滤器配置名称相同。
+
+> **警告：**
+>
+> 降级到规范过滤器名称已被弃用，并将很快被删除。请确保每个过滤器配置映射的键与过滤器配置名称完全匹配，不要依赖降级行为。
+
+每个过滤器的使用每个过滤器配置映射是特定的。请参阅[HTTP过滤器文档](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/http_filters#config-http-filters)以了解如何以及在每种过滤器中使用它。
+
+### 2.3.3 HTTP 路由
+
+Envoy包括一个HTTP路由器过滤器，可以安装它以执行高级路由任务。
+
+这不仅对于处理边缘流量（传统的反向代理请求处理）有用，而且对于构建Envoy网格中的服务到服务通信（通常通过在 `host`/`authority` HTTP头中进行路由以到达特定的上游服务集群）也很有用。
+
+Envoy还具有被配置为前向代理的能力。在前向代理配置中，网格客户端可以通过适当地配置其HTTP代理来参与Envoy。
+
+在高层面上，路由器接收传入的HTTP请求，将其与上游集群匹配，获取到上游集群中主机的连接池，并转发请求。
+
+路由器过滤器支持许多功能，包括：
+
+- 虚拟主机和集群
+
+  将域/权威映射到一组路由规则。
+
+  虚拟集群在虚拟主机级别指定，用于由Envoy生成在标准集群级别之上的额外统计信息。虚拟集群可以使用正则表达式匹配。
+
+- 路径、前缀和头部匹配
+
+  根据大小写敏感和前缀以及精确的请求路径进行路由，或者使用正则表达式路径匹配以及更复杂匹配规则。
+
+  根据任意头部匹配路由。
+
+- Path, prefix and host 重写
+
+  使用正则表达式和捕获组重写前缀或路径。
+
+  显式 host 重写，以及基于选定上游主机的DNS名称自动主机重写。
+
+- 请求重定向
+
+  在路由级别进行路径/主机重定向。
+
+  在虚拟主机级别进行TLS重定向。
+
+- 请求超时、重试和套利
+
+  可以通过HTTP头或路由配置指定请求重试。
+
+  可以通过HTTP头或路由配置指定超时。
+
+  Envoy还为响应请求（逐个尝试）超时的重试提供了请求套利。
+
+- 流量转移和拆分
+
+  通过运行时代码将流量从一个上游集群转移到另一个上游集群，或者根据基于权重/百分比的路由拆分流量（参见流量转移/拆分）。
+
+- 基于策略的路由
+
+  基于优先级或哈希策略的路由。
+
+- 直接响应
+
+  在路由级别进行非代理HTTP响应。
+
+- 绝对URLs
+
+  支持非TLS前向代理的绝对URLs。
+
+#### 2.3.3.1 路由范围
+
+范围路由允许Envoy对域和路由规则的搜索空间施加约束。
+
+`Route Scope` 将一个键与路由表相关联。
+
+对于每个请求，通过HTTP连接管理器动态计算范围键以选择路由表。
+
+与范围关联的 `RouteConfiguration` 可以使用 OnDemand 过滤器进行配置。
+
+Scoped RDS（SRDS）API包含一组Scope资源，每个Scope定义独立的路由配置，以及一个 ScopeKeyBuilder 定义的键构建算法, Envoy 使用该构建算法为每个请求查找相应范围的键。
+
+在以下静态配置的范围内，Envoy将根据分号分割Addr头值，通过等号分割它们来获取键值对，并使用找到的第一个键值对x-foo-key的值作为范围键。
+
+具体而言，如果Addr头值为foo=1;x-foo-key=bar;x-bar-key=something-else，则计算bar作为查找相应路由配置的范围键。
+
+[route-scope.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/http_routing#id1)
+```yaml
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          scoped_routes:
+            name: scope_by_addr
+            scope_key_builder:
+              fragments:
+              - header_value_extractor:
+                  name: Addr
+                  element_separator: ";"
+                  element:
+                    key: x-foo-key
+                    separator: "="
+            scoped_route_configurations_list:
+              scoped_route_configurations:
+              - on_demand: true
+                name: scoped_route_0
+                key:
+                  fragments:
+                  - string_key: bar
+                route_configuration:
+                  name: local_route
+                  virtual_hosts:
+                  - name: local_service
+                    domains: ["*"]
+                    routes:
+                    - match:
+                        prefix: "/"
+                      route:
+                        cluster: cluster_0
+```
+
+为了使键与作用域路由配置匹配，计算键中的片段数量必须与作用域路由配置中的片段数量相匹配。然后，片段按顺序匹配。
+
+> **注意：**
+>
+> 构建的键中缺少片段（视为NULL）将使请求无法匹配任何范围，即无法为请求找到任何路由条目。
+
+
+#### 2.3.3.2 路由表
+
+HTTP连接管理器配置拥有由所有配置的HTTP过滤器使用的路由表。
+
+尽管路由器过滤器是路由表的主要使用者，但其他过滤器也可以访问它，以防它们想根据请求的最终目的地做出决策。例如，内置的速率限制过滤器会参考路由表以确定是否应该基于路由调用全局速率限制服务。
+
+连接管理器确保对于特定请求，获取路由的所有调用都是稳定的，即使决策涉及随机性（例如在运行时配置路由规则的情况下）。
+
+#### 2.3.3.3 重试语义
+
+Envoy允许在路由配置以及特定请求的请求头中进行重试配置。
+
+以下是可能的配置：
+
+- 最大重试次数
+
+  Envoy可以继续重试任意次数。
+
+  重试之间的间隔由指数退避算法（默认）决定，或者基于上游服务器通过头部的反馈（如果存在）。
+
+  > **注意**
+  > 所有重试都在整个请求超时内进行。
+  > 这避免了由于大量重试而导致较长的请求时间。
+
+- 重试条件
+
+  Envoy可以根据应用程序需求在不同的条件下进行重试。例如，网络故障，所有5xx响应代码，幂等4xx响应代码等。
+
+- 重试预算
+
+  Envoy可以通过重试预算限制活动请求的比例，只有这些活动请求可以进行重试，以防止造成流量剧增。
+
+- 主机选择重试插件
+
+  可以为Envoy配置在选择主机进行重试时应用额外的逻辑。
+
+  指定重试主机谓词允许在选择特定主机时重新尝试主机选择，而重试优先级可以配置为调整用于重试的优先级的优先级负载。
+
+> **注意**
+> 
+> Envoy在存在x-envoy-overloaded时重试请求。建议配置重试预算（首选）或将最大活动重试电路断路器设置为适当值以避免重试风暴。
+
+#### 2.3.3.4 请求对冲
+
+Envoy 支持请求对冲，可以通过指定对冲策略进行启用。
+
+这意味着Envoy会并发多个上游请求，并将第一个具有可接受头的响应返回给下游。
+
+重试策略用于确定应该返回响应还是应该等待更多响应。
+
+目前，对冲只能在响应请求超时时执行。这意味着会发出重试请求而不会取消初始超时的请求，并等待延迟响应。根据重试策略的第一个“良好”响应将返回给下游。
+
+这种实现确保不会对相同的上游请求进行两次重试，如果请求超时然后导致5xx响应，则可能会创建两个可重试事件，这可能会发生。
+
+#### 2.3.3.5 优先级路由
+
+Envoy 支持在路由级别进行优先级路由。
+
+目前的优先级实现为每个优先级级别使用不同的连接池和电路断路设置，这意味着即使对于HTTP/2请求，也会对上游主机使用两个物理连接。
+
+目前支持的优先级是`default`和`high `。
+
+#### 2.3.3.5 直接响应
+
+Envoy 支持发送“直接”响应。这些是预先配置的HTTP响应，不需要代理到上游服务器。
+
+在Route中指定直接响应有两种方法：
+
+- 设置direct_response字段。这对所有HTTP响应状态都有效。
+
+- 设置redirect字段。这仅对重定向响应状态有效，但它简化了Location头部的设置。
+
+直接响应具有HTTP状态码和可选的主体。
+
+Route配置可以指定响应主体内联或指定包含主体的文件路径。
+
+如果Route配置指定了文件路径名，Envoy将在配置加载时读取文件并缓存内容。
+
+> **注意：**
+> 
+> 如果指定了响应主体，则默认情况下它的尺寸限制为4KB，无论它是内联提供还是在一个文件中提供。
+>
+> Envoy目前将整个主体保存在内存中，因此4KB的默认值旨在防止代理的内存占用变得太大。
+>
+> 如果需要，可以通过设置max_direct_response_body_size_bytes字段来更改此限制。
+
+如果为Route或封闭的Virtual Host设置了response_headers_to_add，Envoy将包括指定的头部信息在直接HTTP响应中。
+
+
+#### 2.3.3.6 通过通用匹配进行路由
+
+Envoy 支持使用通用匹配树来指定路由表。
+
+这是一个比原始匹配引擎更富有表达力的匹配引擎，能够对任意头部进行次线性匹配（不像原始匹配引擎在某些情况下只能对`:authority`进行这种操作）。
+
+要使用通用匹配树，请在具有`Route`或`RouteList`作为动作的虚拟主机上指定一个匹配器：
+
+[route-scope.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/http_routing#id2)
+```yaml
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains: ["*"]
+              matcher:
+                matcher_tree:
+                  input:
+                    name: request-headers
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.type.matcher.v3.HttpRequestHeaderMatchInput
+                      header_name: :path
+                  exact_match_map:
+                    map:
+                      "/new_endpoint/foo":
+                        action:
+                          name: route_foo
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.config.route.v3.Route
+                            match:
+                              prefix: /foo
+                            route:
+                              cluster: cluster_0
+                            request_headers_to_add:
+                            - header:
+                                key: x-route-header
+                                value: new-value
+                      "/new_endpoint/bar":
+                        action:
+                          name: route_bar
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.config.route.v3.Route
+                            match:
+                              prefix: /bar
+                            route:
+                              cluster: cluster_1
+                            request_headers_to_add:
+                            - header:
+                                key: x-route-header
+                                value: new-value
+
+                      "/new_endpoint/baz":
+                        action:
+                          name: route_list
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.config.route.v3.RouteList
+                            routes:
+                            - match:
+                                prefix: /baz
+                                headers:
+                                - name: x-match-header
+                                  string_match:
+                                    exact: foo
+                              route:
+                                cluster: cluster_2
+                            - match:
+                                prefix: /baz
+                                headers:
+                                - name: x-match-header
+                                  string_match:
+                                    exact: bar
+                              route:
+                                cluster: cluster_3
+
+  clusters:
+```
+
+这允许使用通用匹配框架提供的额外匹配灵活性来解决用于基于路由的路由的相同Route proto消息。
+
+> **注意**
+>
+> 产生的Route还指定了匹配标准。
+>
+> 为了达到路由匹配，除了解析路由外，还必须满足这个条件。
+>
+> 当使用路径重写时，匹配的路径将仅取决于解析的Route的匹配标准。
+>
+> 在匹配树遍历期间进行的路径匹配不会导致路径重写。
+
+唯一支持的输入是请求标头（通过HttpRequestHeaderMatchInput）。
+
+> **提示**
+>
+> 有关API整体的更多信息，请参阅[匹配API](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/matching/matching_api#arch-overview-matching-api)的相关文档。
