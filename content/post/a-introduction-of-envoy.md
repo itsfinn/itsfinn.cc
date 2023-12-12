@@ -767,3 +767,133 @@ Envoy 支持在路由级别进行优先级路由。
 目前的优先级实现为每个优先级级别使用不同的连接池和电路断路设置，这意味着即使对于HTTP/2请求，也会对上游主机使用两个物理连接。
 
 目前支持的优先级是`default`和`high `。
+
+#### 2.3.3.5 直接响应
+
+Envoy 支持发送“直接”响应。这些是预先配置的HTTP响应，不需要代理到上游服务器。
+
+在Route中指定直接响应有两种方法：
+
+- 设置direct_response字段。这对所有HTTP响应状态都有效。
+
+- 设置redirect字段。这仅对重定向响应状态有效，但它简化了Location头部的设置。
+
+直接响应具有HTTP状态码和可选的主体。
+
+Route配置可以指定响应主体内联或指定包含主体的文件路径。
+
+如果Route配置指定了文件路径名，Envoy将在配置加载时读取文件并缓存内容。
+
+> **注意：**
+> 
+> 如果指定了响应主体，则默认情况下它的尺寸限制为4KB，无论它是内联提供还是在一个文件中提供。
+>
+> Envoy目前将整个主体保存在内存中，因此4KB的默认值旨在防止代理的内存占用变得太大。
+>
+> 如果需要，可以通过设置max_direct_response_body_size_bytes字段来更改此限制。
+
+如果为Route或封闭的Virtual Host设置了response_headers_to_add，Envoy将包括指定的头部信息在直接HTTP响应中。
+
+
+#### 2.3.3.6 通过通用匹配进行路由
+
+Envoy 支持使用通用匹配树来指定路由表。
+
+这是一个比原始匹配引擎更富有表达力的匹配引擎，能够对任意头部进行次线性匹配（不像原始匹配引擎在某些情况下只能对`:authority`进行这种操作）。
+
+要使用通用匹配树，请在具有`Route`或`RouteList`作为动作的虚拟主机上指定一个匹配器：
+
+[route-scope.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/http_routing#id2)
+```yaml
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains: ["*"]
+              matcher:
+                matcher_tree:
+                  input:
+                    name: request-headers
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.type.matcher.v3.HttpRequestHeaderMatchInput
+                      header_name: :path
+                  exact_match_map:
+                    map:
+                      "/new_endpoint/foo":
+                        action:
+                          name: route_foo
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.config.route.v3.Route
+                            match:
+                              prefix: /foo
+                            route:
+                              cluster: cluster_0
+                            request_headers_to_add:
+                            - header:
+                                key: x-route-header
+                                value: new-value
+                      "/new_endpoint/bar":
+                        action:
+                          name: route_bar
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.config.route.v3.Route
+                            match:
+                              prefix: /bar
+                            route:
+                              cluster: cluster_1
+                            request_headers_to_add:
+                            - header:
+                                key: x-route-header
+                                value: new-value
+
+                      "/new_endpoint/baz":
+                        action:
+                          name: route_list
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.config.route.v3.RouteList
+                            routes:
+                            - match:
+                                prefix: /baz
+                                headers:
+                                - name: x-match-header
+                                  string_match:
+                                    exact: foo
+                              route:
+                                cluster: cluster_2
+                            - match:
+                                prefix: /baz
+                                headers:
+                                - name: x-match-header
+                                  string_match:
+                                    exact: bar
+                              route:
+                                cluster: cluster_3
+
+  clusters:
+```
+
+这允许使用通用匹配框架提供的额外匹配灵活性来解决用于基于路由的路由的相同Route proto消息。
+
+> **注意**
+>
+> 产生的Route还指定了匹配标准。
+>
+> 为了达到路由匹配，除了解析路由外，还必须满足这个条件。
+>
+> 当使用路径重写时，匹配的路径将仅取决于解析的Route的匹配标准。
+>
+> 在匹配树遍历期间进行的路径匹配不会导致路径重写。
+
+唯一支持的输入是请求标头（通过HttpRequestHeaderMatchInput）。
+
+> **提示**
+>
+> 有关API整体的更多信息，请参阅[匹配API](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/matching/matching_api#arch-overview-matching-api)的相关文档。
