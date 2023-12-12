@@ -491,3 +491,95 @@ HTTP 连接和流存在多种可设置的超时限制。有关重要超时设置
 #### 2.3.1.7 HTTP 头部顺序设置
 
 Envoy 通过链表保持头部（包括伪头部，即以冒号开头的头部）的插入顺序，当头部数量较少时，这种处理方法速度非常快。
+
+### 2.3.2 HTTP 过滤器
+
+Envoy 在连接管理器中支持 HTTP 级别的过滤器堆栈。
+
+可以在不了解底层物理协议（HTTP/1.1、HTTP/2 等）或复用功能的情况下，编写在 HTTP 级别消息上操作的过滤器。
+
+HTTP 过滤器可以是下游过滤器，与给定侦听器相关联，在路由之前对每个下游请求进行流处理，也可以是上游过滤器，与给定集群相关联，在路由器过滤器之后对每个上游请求进行流处理。
+
+有三种类型的 HTTP 级别过滤器：
+
+- 解码器
+
+  解码器过滤器在连接管理器解码请求流（标头、正文和尾部）的部分时被调用。
+
+- 编码器
+
+  编码器过滤器在连接管理器即将编码响应流（标头、正文和尾部）的部分时被调用。
+
+- 解码器/编码器
+
+  解码器/编码器过滤器在连接管理器解码请求流的部件时以及连接管理器即将编码响应流的部件时都被调用。
+
+HTTP 级别过滤器的 API 允许过滤器在不了解底层协议的情况下操作。
+
+与网络级别过滤器一样，HTTP 过滤器可以停止并继续迭代到后续过滤器。这允许更复杂的场景，如健康检查处理、调用速率限制服务、缓冲、路由、为应用程序流量生成统计信息（如 DynamoDB）等。
+
+HTTP 级别过滤器还可以在单个请求流的上下文中共享状态（静态和动态）。有关更多详细信息，请参阅[过滤器之间的数据共享](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/data_sharing_between_filters#arch-overview-data-sharing-between-filters)。
+
+> **提示：**
+>
+> 请参阅 HTTP 过滤器的配置和 protobuf 部分以获取参考文档。
+> 
+> 请参见[此处](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#extension-category-envoy-filters-http)以获取包含的过滤器。
+
+#### 2.3.2.1 过滤器排序
+
+过滤器在http_filters字段中的顺序很重要。如果过滤器按以下顺序配置（并假设所有三个过滤器都是解码器/编码器过滤器）：
+
+```yaml
+http_filters:
+  - A
+  - B
+  # The last configured filter has to be a terminal filter, as determined by the
+  # NamedHttpFilterConfigFactory::isTerminalFilterByProto(config, context) function. This is most likely the router
+  # filter.
+  - C
+```
+
+连接管理器将按以下顺序调用解码器过滤器：A、B、C。另一方面，连接管理器将以相反的顺序调用编码器过滤器：C、B、A。
+
+#### 2.3.2.2 条件过滤器配置
+
+根据传入的请求改变过滤器配置有一些支持。请参阅[复合过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/composite_filter#config-http-filters-composite)的详细信息，了解如何配置可用于给定请求的匹配树，以解析要使用的过滤器配置。
+
+#### 2.3.2.3 过滤器路由突变
+
+在下游HTTP过滤器链处理过程中，当 `decodeHeaders()` 被一个过滤器调用时，连接管理器执行路由解析并设置一个指向上游集群的缓存路由。
+
+下游过滤器具有在路由解析后直接变异此缓存路由的能力，通过`setRoute`回调和`DelegatingRoute`机制。
+
+过滤器可以创建一个`DelegatingRoute`的派生/子类来覆盖特定方法（例如，路由的超时值或路由条目的集群名称），同时保留基础路由`DelegatingRoute`的其余属性/行为。然后，可以使用`setRoute`手动将缓存路由设置为这个`DelegatingRoute`实例。此类派生类的示例可以在[ExampleDerivedDelegatingRoute](https://github.com/envoyproxy/envoy/blob/v1.28.0/test/test_common/delegating_route_utility.h)中找到。
+
+如果没有其他过滤器在链中修改缓存路由选择（例如，过滤器通常执行的操作是清除路由缓存，setRoute将不会持久存在），此路由选择将进入路由器过滤器，该过滤器将最终确定请求将被转发到的上游集群。
+
+#### 2.3.2.4 路由特定配置
+
+每个过滤器配置映射可用于提供HTTP过滤器的路由或虚拟主机或路由配置特定的配置。
+
+每个过滤器配置映射的键应与过滤器配置名称匹配。
+
+例如，给定以下HTTP过滤器配置：
+
+```yaml
+http_filters:
+- name: custom-filter-name-for-lua # Custom name be used as filter config name
+  typed_config: { ... }
+- name: envoy.filters.http.buffer # Canonical name be used as filter config name
+  typed_config: { ... }
+```
+
+`custom-filter-name-for-lua`和`envoy.filters.http.buffer`将用作查找相关每个过滤器配置映射的键。
+
+对于第一个`custom-filter-name-for-lua`过滤器，如果没有通过`custom-filter-name-for-lua`找到相关条目，我们将降级尝试使用规范过滤器名称`envoy.filters.http.lua`。这种降级是为了向后兼容，可以通过显式设置运行时标志`envoy.reloadable_features.no_downgrade_to_canonical_name`为`true`来禁用。
+
+对于第二个`envoy.filters.http.buffer`过滤器，如果没有通过`envoy.filters.http.buffer`找到相关条目，我们将不会尝试降级，因为规范过滤器名称与过滤器配置名称相同。
+
+> **警告：**
+>
+> 降级到规范过滤器名称已被弃用，并将很快被删除。请确保每个过滤器配置映射的键与过滤器配置名称完全匹配，不要依赖降级行为。
+
+每个过滤器的使用每个过滤器配置映射是特定的。请参阅[HTTP过滤器文档](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/http_filters#config-http-filters)以了解如何以及在每种过滤器中使用它。
