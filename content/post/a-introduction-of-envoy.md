@@ -423,3 +423,49 @@ HTTP连接管理器出于安全原因执行各种标头清理操作。
 
   clusters:
 ```
+
+#### 2.3.1.5 内部重定向
+
+Envoy支持在内部处理3xx重定向，即捕获可配置的3xx重定向响应，合成新的请求，将其发送到由新路由匹配指定的上游，并将重定向的响应作为对原始请求的响应返回。原始请求的头和正文将被发送到重定向的新位置。目前还不支持 Trailer。
+
+内部重定向通过在路由配置中的 `internal_redirect_policy` 字段进行配置。当重定向处理处于打开状态时，来自上游的任何3xx响应（与`redirect_response_codes` 字段值匹配）都受Envoy处理的重定向支配。
+
+如果Envoy被配置为内部重定向HTTP 303并且接收HTTP 303响应，它将分发一个无正文的HTTP GET，如果原始请求不是GET或HEAD请求。否则，Envoy将保留原始的HTTP方法。有关更多信息，请参阅 [RFC 7231 第 6.4.4 节](https://tools.ietf.org/html/rfc7231#section-6.4.4)。
+
+为了成功处理重定向，必须通过以下检查：
+
+1. 响应代码与redirect_response_codes匹配，默认为302，或一组3xx代码（301、302、303、307、308）。
+
+2. 具有有效、完全限定的URL的 `Location` 头。
+
+3. 请求必须完全由Envoy处理。
+
+4. 请求必须小于per_request_buffer_limit_bytes限制。
+
+5. allow_cross_scheme_redirect为true（默认为false），或者下游请求的 Scheme 和 `Location` 头的 Scheme 相同。
+
+6. 给定下游请求中已处理的内部重定向数量不超过该请求或重定向请求所触及的路由的max_internal_redirects。
+
+7. 所有谓词都接受目标路由。
+
+任何故障都将导致重定向传递给下游。
+
+由于重定向请求可能会在多个路由之间反弹，因此重定向链中的任何路由，如果
+
+- 未启用内部重定向，
+- 或者当重定向链达到它时，其max_internal_redirects小于或等于重定向链的长度，
+- 或者被任何谓词禁止，
+
+则将导致重定向传递给下游。
+
+可以使用 `previous_routes` 谓词和 `allow_listed_routes` 这两个谓词来创建一个DAG，该DAG定义了重定向链。具体而言，allow_listed_routes谓词定义了DAG中各个节点的边缘，而previous_routes谓词定义了边缘的“已访问”状态，这样如果需要，可以避免循环。
+
+可以使用第三个谓词safe_cross_scheme来防止HTTP -> HTTPS重定向。
+
+一旦重定向通过这些检查，将被发送到原始上游的请求标头将被修改：
+
+- 将原始请求的完全限定URL放入x-envoy-original-url标头中。
+
+- 用Location标头中的值替换 `Authority`/`Host`, `Scheme`, 和 `Path` 标头。
+
+然后，将修改后的请求标头选择新的路由、通过新的过滤器链、然后与所有正常的Envoy请求一样进行过滤和发送到上游。
