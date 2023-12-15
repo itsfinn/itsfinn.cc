@@ -955,7 +955,7 @@ WebSocket请求将被转换为HTTP/2+ CONNECT流，带有`:protocol`头指示原
 > HTTP/2+升级路径具有非常严格的HTTP/1.1合规性，因此不会代理带有正文的WebSocket升级请求或响应。
 
 
-#### 2.3.4.1 `CONNECT` 支持
+#### 2.3.4.2 `CONNECT` 支持
 
 Envoy的`CONNECT`支持默认是关闭的（Envoy将向`CONNECT`请求发送内部生成的403响应）。
 
@@ -992,3 +992,189 @@ Envoy可以以两种方式处理`CONNECT`，一种是像处理任何其他请求
 > 对于通过TLS的CONNECT，Envoy目前无法配置为在单跳中以明文形式发送CONNECT请求，并在之前未加密的负载中进行加密。
 > 
 > 要发送明文中的CONNECT并加密负载，必须首先通过“上游”TLS回环连接转发加密的HTTP负载，然后让TCP监听器获取加密的负载并将其发送到上游。
+
+#### 2.3.4.3 CONNECT-UDP支持
+
+> **注意：**
+> `CONNECT-UDP`目前处于alpha状态，可能还不够稳定，不建议在生产环境中使用。
+
+`CONNECT-UDP`（[RFC 9298](https://www.rfc-editor.org/rfc/rfc9298)）允许HTTP客户端通过HTTP代理服务器创建UDP隧道。与仅限于隧道TCP的`CONNECT`不同，`CONNECT-UDP`可用于代理基于UDP的协议，如HTTP/3。
+
+Envoy默认禁用`CONNECT-UDP`支持。类似于`CONNECT`，可以通过在[upgrade_configs](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-upgrade-configs)中设置值为特殊关键字`CONNECT-UDP`来启用它。与`CONNECT`类似，默认情况下，`CONNECT-UDP`请求将被转发到上游。必须设置connect_config以终止请求并将有效负载作为UDP数据报转发到目标。
+
+- 配置示例
+
+以下示例配置使Envoy将`CONNECT-UDP`请求转发到上游。请注意，upgrade_configs被设置为`CONNECT-UDP`。
+
+[proxy_connect_udp_http3_downstream.yaml]([https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/upgrades#id4](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/f623917f467541efc447cc5c00b0dcd7/proxy_connect_udp_http3_downstream.yaml)https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/f623917f467541efc447cc5c00b0dcd7/proxy_connect_udp_http3_downstream.yaml)
+```yaml
+      filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          codec_type: HTTP3
+          stat_prefix: ingress_http
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains:
+              - "*"
+              routes:
+              - match:
+                  connect_matcher:
+                    {}
+                route:
+                  cluster: cluster_0
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          http2_protocol_options:
+            allow_connect: true
+          upgrade_configs:
+          - upgrade_type: CONNECT-UDP
+  clusters:
+  - name: cluster_0
+```
+
+以下示例配置使Envoy终止`CONNECT-UDP`请求，并将UDP有效载荷发送到目标。与本示例一样，必须设置connect_config以终止`CONNECT-UDP`请求。
+
+[terminate_http3_connect_udp.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/a2eeb79fccd8c55ae6a46f1042c348dd/terminate_http3_connect_udp.yaml)
+
+```yaml
+      filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          codec_type: HTTP3
+          stat_prefix: ingress_http
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains:
+              - "*"
+              routes:
+              - match:
+                  connect_matcher:
+                    {}
+                route:
+                  cluster: service_google
+                  upgrade_configs:
+                  - upgrade_type: CONNECT-UDP
+                    connect_config:
+                      {}
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          http2_protocol_options:
+            allow_connect: true
+          upgrade_configs:
+          - upgrade_type: CONNECT-UDP
+  clusters:
+  - name: service_google
+```
+
+#### 2.3.4.4 通过 HTTP 隧道化 UDP 
+
+> **注意：**
+> 原始 UDP 隧道化尚处于 alpha 状态，可能还不足以在生产环境中稳定使用。建议谨慎使用此功能。
+
+除了上面一节中所述的 CONNECT-UDP 终止之外，Envoy 还支持通过 HTTP CONNECT 或 HTTP POST 请求隧道化原始 UDP，即所谓的 UDP 代理监听器过滤器。默认情况下，UDP 隧道化功能处于禁用状态，可以通过设置 tunneling_config 配置进行启用。
+
+
+> **注意：**
+> 目前，Envoy 只支持通过 HTTP/2 流进行 UDP 隧道化。
+
+默认情况下，tunneling_config 将对每个 UDP 会话（由 5 元组中的数据报标识）升级连接以创建 HTTP/2 流。由于此升级协议要求封装机制来保留原始数据报的边界，因此需要应用 HTTP Capsule 会话过滤器。HTTP/2 流将在上游连接上复用。
+
+与 TCP 隧道不同，TCP 隧道可以通过交替禁用连接套接字的读取来进行下游流控制。对于 UDP 数据报，此机制不受支持。因此，当隧道化 UDP 时，从下游接收到的新的数据报要么被流传输到上游（如果上游已准备就绪），要么在 UDP 代理等待上游就绪时停止。如果上游尚未准备好（例如，等待 HTTP 响应头），则可以丢弃数据报或缓冲直到上游就绪。在这种情况下，默认情况下，下游数据报将被丢弃，除非设置了 tunneling_config 中的 buffer_options。默认缓冲限制适度，以尽量避免大量不必要的缓冲内存，但可以根据所需的使用情况对其进行调整。当上游准备就绪时，UDP 代理将首先刷新所有先前缓冲的数据报。
+
+> **注意：**
+> 如果设置了 POST，则上游流不符合 connect-udp RFC，而将变成 POST 请求。将从 post_path 字段设置标头中使用的路径，并且标头将不包含目标主机和目标端口（如 connect-udp 协议所要求的）。应该谨慎使用此选项。
+
+- 示例配置
+
+以下示例配置使Envoy通过升级的CONNECT-UDP请求隧道化原始UDP数据报到上游。
+
+[raw_udp_tunneling_http2.yaml](https://www.envoyproxy.io/docs/envoy/v1.28.0/_downloads/67a360ca4aff08fa633b6d9cdf84371c/raw_udp_tunneling_http2.yaml)
+
+```yaml
+        session_filters:
+        - name: envoy.filters.udp.session.http_capsule
+          typed_config:
+            '@type': type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.session.http_capsule.v3.FilterConfig
+        tunneling_config:
+          # note: proxy_host supports string substitution, for example setting "%FILTER_STATE(proxy.host.key:PLAIN)%"
+          # will take the target host value from the session's filter state.
+          proxy_host: proxy.host.com
+          # note: target_host supports string substitution, for example setting "%FILTER_STATE(target.host.key:PLAIN)%"
+          # will take the target host value from the session's filter state.
+          target_host: target.host.com
+          # note: The target port value can be overridden per-session by setting the required port value for
+          # the filter state key ``udp.connect.target_port``.
+          default_target_port: 443
+          retry_options:
+            max_connect_attempts: 2
+          buffer_options:
+            max_buffered_datagrams: 1024
+            max_buffered_bytes: 16384
+          headers_to_add:
+          - header:
+              key: original_dst_port
+```
+
+#### 2.3.4.5 通过 HTTP 隧道化 TCP
+
+Envoy 还支持通过 HTTP CONNECT 或 HTTP POST 请求隧道化原始 TCP 数据报。以下是几种使用场景。
+
+HTTP/2+ CONNECT 可用于通过预热的安全连接进行多路复用的 TCP 代理，并分摊 TLS 握手成本。
+
+以下是示例 SMTP 设置：
+
+[SMTP Upstream] —> raw SMTP >— [L2 Envoy] —> SMTP tunneled over HTTP/2 CONNECT >— [L1 Envoy] —> raw SMTP >— [Client]
+
+HTTP/1.1 CONNECT 可用于让 TCP 客户端连接到其自己的目的地，通过一个 HTTP 代理服务器（例如：不支持 HTTP/2 的公司代理）。
+
+[HTTP Server] —> raw HTTP >— [L2 Envoy] —> HTTP tunneled over HTTP/1.1 CONNECT >— [L1 Envoy] —> raw HTTP >— [HTTP Client]
+
+> **注意：**
+> 当使用 HTTP/1 CONNECT 时，每个 TCP 客户端连接都会在 L1 和 L2 Envoy 之间建立 TCP 连接，当有选择时，最好使用 HTTP/2 或更高版本。
+
+HTTP POST 也可用于代理多路复用的 TCP，当中间代理不支持 CONNECT 时。
+
+以下是示例 HTTP 设置：
+
+[TCP Server] —> raw TCP >— [L2 Envoy] —> TCP tunneled over HTTP/2 or HTTP/1.1 POST >— [Intermediate Proxies] —> HTTP/2 or HTTP/1.1 POST >— [L1 Envoy] —> raw TCP >— [TCP Client]
+
+> **提示：**
+> 这种设置的示例可以在Envoy示例配置目录中找到。
+> 
+> 对于HTTP/1.1 CONNECT，请尝试以下任一命令：
+>
+> ```yaml
+> envoy -c configs/encapsulate_in_http1_connect.yaml --base-id 1
+> envoy -c configs/terminate_http1_connect.yaml --base-id 1
+> ```
+>
+> 对于HTTP/2 CONNECT，请尝试以下任一命令：
+>
+> ```yaml
+> envoy -c configs/encapsulate_in_http2_connect.yaml --base-id 1
+> envoy -c configs/terminate_http2_connect.yaml --base-id 1
+> ```
+> 
+> 对于HTTP/2 POST，请尝试以下任一命令：
+>
+> ```yaml
+> envoy -c configs/encapsulate_in_http2_post.yaml --base-id 1
+> envoy -c configs/terminate_http2_post.yaml --base-id 1
+> ```
+> 
+> 在所有情况下，您将运行第一个Envoy，它将在端口10000上监听TCP流量，并将其封装在HTTP CONNECT或HTTP POST请求中；还有一个在10001端口上监听，去掉CONNECT头部（对POST请求不需要），并将原始TCP上游转发到google.com。
+
+Envoy会在HTTP隧道建立成功（即CONNECT请求成功响应收到）后，才开始将下游TCP数据流传输到上游。
+
+如果您想解封装CONNECT请求，并对解封装的有效负载进行HTTP处理，最简单的方法是使用内部侦听器。
