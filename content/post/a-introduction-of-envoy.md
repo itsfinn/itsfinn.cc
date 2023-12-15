@@ -897,3 +897,98 @@ Envoy 支持使用通用匹配树来指定路由表。
 > **提示**
 >
 > 有关API整体的更多信息，请参阅[匹配API](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/matching/matching_api#arch-overview-matching-api)的相关文档。
+
+
+### 2.3.4 HTTP升级
+
+Envoy的升级支持主要用于WebSocket和CONNECT支持，但也可以用于任意升级。
+
+升级通过HTTP过滤器链传递HTTP头和payload。
+
+可以在配置`upgrade_configs`时选择使用或不使用自定义过滤器链。
+
+如果只指定了`upgrade_type`，则升级头、请求和响应正文以及HTTP数据有效负载将通过默认的HTTP过滤器链传递。
+
+为了避免对升级有效负载使用HTTP仅过滤器，可以为给定的升级类型设置自定义过滤器，直到仅使用路由器过滤器将HTTP数据发送到上游。
+
+> **提示**
+>
+> 缓冲通常与升级不兼容，因此，如果默认HTTP过滤器链中配置了缓冲过滤器，则可能需要排除缓冲过滤器以进行升级，方法是使用升级过滤器，并在该列表中不包括缓冲过滤器。
+
+可以在每个路由上启用或禁用升级。
+
+任何按路由启用/禁用都会自动覆盖HttpConnectionManager的配置，但自定义过滤器链只能按HttpConnectionManager进行配置。
+
+|HCM Upgrade Enabled | Route Upgrade Enabled | Upgrade Enabled |
+|--------------------|-----------------------|-----------------|
+|T (Default)         |T (Default)            |T                |
+|T (Default)         | F                     |F                |
+|F                   |T (Default)            |T                |
+|F                   |F                      |F                |
+
+> **提示**
+>
+> 升级的统计数据都是捆绑在一起的，因此WebSocket和其他升级的统计数据都是通过如下统计信息来追踪的，如 `downstream_cx_upgrades_total` 和`downstream_cx_upgrades_active`。
+
+
+#### 2.3.4.1 跨越 HTTP/2 或 HTTP/3 的 WebSocket
+
+HTTP/2 和 HTTP/3 支持 WebSocket, 在 envoy 里默认是关闭的. 但是Envoy确实倾向于在整个部署中使用统一的HTTP/2+网格，通过HTTP/2和更高版本对WebSocket进行隧道传输；例如，以下形式的部署：
+
+[`Client`] —-> `HTTP/1.1` >—- [`Front Envoy`] —-> `HTTP/2` >—- [`Sidecar Envoy` —-> `HTTP/1` >—- `App`]
+
+
+在这种情况下，如果客户端使用WebSocket，我们希望WebSocket能够完整地到达上游服务器，这意味着它需要经过 `HTTP/2` 这一跳。
+
+对于HTTP/2，这是通过[扩展的CONNECT（RFC 8441）](https://www.rfc-editor.org/rfc/rfc8441)支持实现的，通过在第二层Envoy设置allow_connect为true来启用。
+
+对于HTTP/3，有通过alpha选项allow_extended_connect配置的并行支持，因为没有正式的RFC。
+
+WebSocket请求将被转换为HTTP/2+ CONNECT流，带有`:protocol`头指示原始升级，经过 `HTTP/2` 这一跳，并降级回 HTTP/1 WebSocket Upgrade.。
+
+类似 `upgrade-CONNECT-upgrade` 的转换将在任何HTTP/2+跳上执行，其中存在的缺陷是HTTP/1.1方法始终假定为GET。
+
+允许非WebSocket升级使用任何有效的HTTP方法（例如POST），当前的升级/降级机制将在最后的`Envoy-上游`这一跳, 丢弃原始方法并将升级请求转换为GET方法。
+
+> **注意**
+>
+> HTTP/2+升级路径具有非常严格的HTTP/1.1合规性，因此不会代理带有正文的WebSocket升级请求或响应。
+
+
+#### 2.3.4.1 `CONNECT` 支持
+
+Envoy的`CONNECT`支持默认是关闭的（Envoy将向`CONNECT`请求发送内部生成的403响应）。
+
+可以通过上述升级选项启用`CONNECT`支持，将升级值设置为特殊的关键词`CONNECT`。
+
+对于HTTP/2和更高版本，CONNECT请求可能具有路径，但一般来说，对于HTTP/1.1的CONNECT请求没有路径，并且只能通过connect_matcher进行匹配。
+
+> **注意**
+>
+> 当对`CONNECT`请求进行非通配符域名匹配时，`CONNECT`目标与`Host`/`Authority`头进行匹配，而不是与目标进行匹配。你可能需要包括端口（例如`hostname:port`）才能成功匹配。
+
+Envoy可以以两种方式处理`CONNECT`，一种是像处理任何其他请求一样代理`CONNECT`头部，并让上游终止`CONNECT`请求，另一种是终止`CONNECT`请求，并将负载作为原始TCP数据转发。
+
+当设置了`CONNECT`升级配置时，默认行为是代理`CONNECT`请求，将其视为使用升级路径的任何其他请求。
+
+如果希望终止，可以通过设置connect_config来实现。
+
+如果该消息存在于`CONNEC`T请求中，路由器过滤器将删除请求头，并将HTTP负载转发到上游。从上游收到初始TCP数据后，路由器将合成200响应头，然后将TCP数据作为HTTP响应体转发。
+
+> **警告**
+> 
+> 如果配置不正确，此CONNECT支持模式可能会产生重大安全漏洞，因为如果它们位于正文负载中，上游将转发未经过滤的头部。
+> 
+> 请谨慎使用！
+
+> **提示**
+> 
+> 有关代理连接的示例，请参阅configs/proxy_connect.yaml
+> 
+> 有关终止连接的示例，请参阅configs/terminate_http1_connect.yaml和configs/terminate_http2_connect.yaml
+
+> **注意**
+> 
+> 对于通过TLS的CONNECT，Envoy目前无法配置为在单跳中以明文形式发送CONNECT请求，并在之前未加密的负载中进行加密。
+> 
+> 要发送明文中的CONNECT并加密负载，必须首先通过“上游”TLS回环连接转发加密的HTTP负载，然后让TCP监听器获取加密的负载并将其发送到上游。
