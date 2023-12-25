@@ -191,8 +191,6 @@ Envoy通过扩展提供DNS解析，并包含3个内置扩展：
 
 基于`c-ares`的DNS解析器在`dns.cares`统计树中发出以下统计信息：
 
-好的，以下是按您的要求更新后的表格。
-
 | Name | Type | Description |
 | --- | --- | --- |
 | resolve_total | Count | DNS查询的总数 |
@@ -203,8 +201,6 @@ Envoy通过扩展提供DNS解析，并包含3个内置扩展：
 
 基于Apple的DNS解析器在`dns.apple`统计树中发出以下统计信息：
 
-好的，以下是按您的要求更新后的表格。
-
 | Name | Type | Description |
 | :---: | :---: | :---: |
 | connection_failure | Counter | 连接到DNS服务器的失败尝试的数量 |
@@ -213,3 +209,91 @@ Envoy通过扩展提供DNS解析，并包含3个内置扩展：
 | processing_failure | Counter | 处理来自DNS服务器数据时发生的故障数量 |
 | socket_failure | Counter | 获取到DNS服务器套接字的文件描述符的失败尝试的数量 |
 | timeout | Counter | 超时的查询的数量 |
+
+
+## 健康检查
+
+Envoy支持针对每个上游集群进行主动健康检查的配置。正如在服务发现部分所述，主动健康检查与EDS服务发现类型是相辅相成的。然而，即使在使用其他服务发现类型时，也可能需要主动健康检查。Envoy提供了三种不同类型的健康检查以及各种设置（检查间隔、在标记主机为不健康之前需要的失败次数、在标记主机为健康之前需要的成功次数等）：
+
+* HTTP：在HTTP健康检查期间，Envoy将向上游主机发送HTTP请求。默认情况下，如果主机被认为是健康的，它期望得到200的响应。预期和可重试的响应代码是可以配置的。上游主机可以通过返回非预期或不可重试的状态码（默认情况下任何非200码）来通知下游主机不再向其转发流量。
+* gRPC：在gRPC健康检查期间，Envoy将向上游主机发送gRPC请求。默认情况下，如果主机被认为是健康的，它期望得到200的响应。gRPC健康检查在此处是可配置的。
+* L3/L4：在L3/L4健康检查期间，Envoy将向上游主机发送可配置的字节缓冲区。如果主机被认为是健康的，它期望字节缓冲区在响应中被回显。Envoy还支持仅L3/L4连接的健康检查。
+* Redis：Envoy将发送Redis PING命令并期望PONG响应。上游Redis服务器可以用除PONG以外的任何内容进行响应，以导致立即的活动健康检查失败。可选地，Envoy可以在用户指定的键上执行EXISTS。如果键不存在，则认为通过了健康检查。这允许用户通过将指定键设置为任何值并等待流量排空来标记Redis实例进行维护。参见[redis_key](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/health_checkers/redis/v3/redis.proto#envoy-v3-api-msg-extensions-health-checkers-redis-v3-redis)。
+* Thrift：Envoy将发送Thrift请求，并期望得到成功的响应。如果上游主机返回异常，健康检查将失败。详情请参见[thrift](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/health_checkers/thrift/v3/thrift.proto#envoy-v3-api-msg-extensions-health-checkers-thrift-v3-thrift)部分。
+
+健康检查通过为集群指定的传输套接字进行。这意味着，如果一个集群使用启用了TLS的传输套接字，健康检查也将通过TLS进行。此外，可以为健康检查连接配置TLS选项，这在相应的上游使用基于ALPN的FilterChainMatch，健康检查与数据连接使用不同协议时非常有用。
+
+### 针对每个集群成员的健康检查配置
+
+如果已为上游集群配置了主动健康检查，可以通过设置[ClusterLoadAssignment](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/endpoint/v3/endpoint.proto#envoy-v3-api-msg-config-endpoint-v3-clusterloadassignment)中每个定义的LocalityLbEndpoints中的LbEndpoint的Endpoint中的HealthCheckConfig来为每个注册成员指定特定附加配置。
+
+例如，要为集群成员设置备用健康检查地址和端口，可以按照以下方式配置健康检查：
+
+```yaml
+load_assignment:
+  endpoints:
+  - lb_endpoints:
+    - endpoint:
+        health_check_config:
+          port_value: 8080
+          address:
+            socket_address:
+              address: 127.0.0.1
+              port_value: 80
+        address:
+          socket_address:
+            address: localhost
+            port_value: 80
+```
+
+### 健康检查事件日志
+
+Envoy可以通过在HealthCheck配置中指定事件日志文件路径event_log_path，生成一个可选的健康检查器日志，记录弹出和添加事件。日志结构化为HealthCheckEvent消息的JSON转储。
+
+注意：HealthCheck配置中的event_log_path已被废弃，取而代之的是使用HealthCheck event_logger 扩展。event_log_path在文件接收器扩展中用于JSON转储。
+
+创建了一个新的事件接收器扩展目录`envoy.health_check.event_sinks`，API可以在[这里](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/health_check_event_sinks/health_check_event_sinks#api-v3-health-check-event-sinks)找到。
+
+通过将`always_log_health_check_failures`标志设置为true，可以将Envoy配置为记录所有健康检查失败事件。
+
+### 被动健康检查
+
+Envoy还通过离群检测支持被动健康检查。
+
+### 连接池交互
+
+更多信息请参见[此处](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/connection_pooling#arch-overview-conn-pool-health-checking)。
+
+### HTTP健康检查过滤器
+
+当在集群之间部署Envoy网格时启用健康检查，可能会生成大量健康检查流量。Envoy包括一个HTTP健康检查过滤器，可以在配置的HTTP监听器中安装。该过滤器具有几种不同的操作模式：
+
+- **无直通**：在此模式下，健康检查请求从未传递给本地服务。Envoy将根据服务器的当前排空状态返回200或503。
+
+- **无直通，从上游集群健康状态计算**：在此模式下，健康检查过滤器将根据一个或多个上游集群中至少有一定比例的服务器（健康 + 降级）是否可用，返回200或503。 （如果Envoy服务器处于排空状态，则无论上游集群的健康状况如何，都将返回503。）
+
+- **直通**：在此模式下，Envoy将每个健康检查请求传递给本地服务。服务应根据其健康状态返回200或503。
+
+- **带缓存的直通**：在此模式下，Envoy将健康检查请求传递给本地服务，但随后在一段时间内缓存结果。随后的健康检查请求将返回在缓存时间内可用的缓存值。当缓存时间到达时，下一个健康检查请求将传递给本地服务。这是在操作大型网格时的推荐操作模式。Envoy使用持久连接进行健康检查流量，并且健康检查请求对Envoy本身的成本非常低。因此，这种操作模式提供了每个上游主机的健康状态的最终一致视图，而不会因大量健康检查请求而使本地服务不堪重负。
+
+进一步阅读：
+
+- 健康检查过滤器[配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/health_check_filter#config-http-filters-health-check)。
+
+- [/healthcheck/fail](https://www.envoyproxy.io/docs/envoy/v1.28.0/operations/admin#operations-admin-interface-healthcheck-fail) 管理终端节点。
+
+- [/healthcheck/ok](https://www.envoyproxy.io/docs/envoy/v1.28.0/operations/admin#operations-admin-interface-healthcheck-ok) 管理终端节点。
+
+### 活动健康检查快速失败
+
+在主动健康检查与被动健康检查（异常检测）结合使用时，通常会使用较长的健康检查间隔以避免产生大量主动健康检查流量。在这种情况下，仍然希望能够通过[/healthcheck/fail](https://www.envoyproxy.io/docs/envoy/v1.28.0/operations/admin#operations-admin-interface-healthcheck-fail)管理终端节点快速排出上游主机。为了支持这一功能，路由器过滤器和HTTP主动健康检查器将对[x-envoy-immediate-health-check-fail](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/router_filter#config-http-filters-router-x-envoy-immediate-health-check-fail)头进行响应。如果此头由上游主机设置，Envoy将立即将主机标记为活动健康检查失败，并将其排除在负载均衡之外。请注意，这仅在主机的集群已配置主动健康检查时发生。健康检查过滤器将在通过/healthcheck/fail管理终端节点标记为失败时自动设置此头。
+
+### 健康检查标识
+
+仅仅验证上游主机对特定健康检查URL的响应并不一定意味着上游主机是有效的。例如，在云自动缩放或容器环境中使用最终一致的服务发现时，主机可能会消失，然后以相同的IP地址但是不同的主机类型重新出现。解决此问题的一种方法是每个服务类型都有一个不同的HTTP健康检查URL。该方法的缺点是，随着每个健康检查URL都是完全自定义的，整体配置变得更加复杂。
+
+Envoy HTTP健康检查器支持[service_name_matcher](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/health_check.proto#envoy-v3-api-field-config-core-v3-healthcheck-httphealthcheck-service-name-matcher)选项。如果设置了此选项，健康检查器还会比较*x-envoy-upstream-healthchecked-cluster*响应头与*service_name_matcher*的值。如果值不匹配，则健康检查不通过。上游健康检查过滤器将在响应头中追加*x-envoy-upstream-healthchecked-cluster*。追加的值由命令行选项`--service-cluster`确定。
+
+### 健康降级
+
+在使用HTTP健康检查器时，上游主机可以返回`x-envoy-degraded`，以通知健康检查器该主机已降级。有关这如何影响负载均衡，请参见[这里](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/degraded#arch-overview-load-balancing-degraded)。
