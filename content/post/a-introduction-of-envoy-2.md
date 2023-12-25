@@ -171,5 +171,45 @@ Envoy不会路由到目标主机。健康检查数据被认为比发现数据更
 **主机缺失/健康检查失败**
 
 Envoy不会路由并删除目标主机。
+
 这是Envoy会清除主机数据的唯一状态。
 
+
+## DNS解析
+
+许多Envoy组件都会进行DNS解析：不同的集群类型（strict dns，logical dns）；动态转发代理系统（由一个集群和一个过滤器组成）；udp dns过滤器等。Envoy使用[c-ares](https://github.com/c-ares/c-ares)作为第三方DNS解析库。在Apple操作系统上，Envoy还通过envoy.restart_features.use_apple_api_for_dns_lookups运行时特性提供了使用Apple特定API的解析。
+
+Envoy通过扩展提供DNS解析，并包含3个内置扩展：
+
+1. c-ares：CaresDnsResolverConfig
+
+2. Apple（仅限iOS/macOS）：AppleDnsResolverConfig
+
+3. getaddrinfo：GetAddrInfoDnsResolverConfig
+
+有关内置DNS类型配置的示例，请参阅[HTTP过滤器配置文档](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/dynamic_forward_proxy_filter#config-http-filters-dynamic-forward-proxy)。
+
+基于`c-ares`的DNS解析器在`dns.cares`统计树中发出以下统计信息：
+
+好的，以下是按您的要求更新后的表格。
+
+| Name | Type | Description |
+| --- | --- | --- |
+| resolve_total | Count | DNS查询的总数 |
+| pending_resolutions | Gauge | 待处理的DNS查询的数量 |
+| not_found | Counter | 返回NXDOMAIN或NODATA响应的DNS查询数量 |
+| timeout | Counter | 超时的DNS查询数量 |
+| get_addr_failure | Counter | DNS查询过程中发生的常规故障数量 |
+
+基于Apple的DNS解析器在`dns.apple`统计树中发出以下统计信息：
+
+好的，以下是按您的要求更新后的表格。
+
+| Name | Type | Description |
+| :---: | :---: | :---: |
+| connection_failure | Counter | 连接到DNS服务器的失败尝试的数量 |
+| get_addr_failure | Counter | 调用GetAddrInfo API时发生的一般故障数量 |
+| network_failure | Counter | 由于网络连接问题导致的故障数量 |
+| processing_failure | Counter | 处理来自DNS服务器数据时发生的故障数量 |
+| socket_failure | Counter | 获取到DNS服务器套接字的文件描述符的失败尝试的数量 |
+| timeout | Counter | 超时的查询的数量 |
