@@ -8,8 +8,9 @@ Categories: ["envoy"]
 DisableComments: false
 ---
 
+原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
-Envoy 官网介绍文档的中文翻译(上游集群部分), 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
+Envoy 官网介绍文档的中文翻译(上游集群部分):集群管理器、服务发现、DNS解析、健康检查、连接池、负载均衡
 <!--more-->
 
 # 上游集群
