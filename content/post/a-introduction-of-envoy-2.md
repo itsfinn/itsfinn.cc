@@ -369,3 +369,42 @@ Envoy支持[RFC8305](https://tools.ietf.org/html/rfc8305)定义的Happy Eyeballs
 若该主机重新被纳入负载均衡轮询，将创建新连接，这样做将最大化规避潜在流量问题的机会，无论这些
 问题是由ECMP路由还是其他因素造成的。
 
+## 负载均衡
+
+### 概述
+
+#### 什么是负载均衡？
+
+负载均衡是指在一个上游集群中，将流量在多个主机之间分配的方法，目的是为了高效利用可用资源。有
+多种方法可以实现负载均衡，Envoy因此提供了多种负载均衡策略。从宏观上看，这些策略可以分为两
+大类：全局负载均衡和分布式负载均衡。
+
+#### 分布式负载均衡
+
+分布式负载均衡指的是Envoy根据上游主机的位置决定如何分配负载到端点。
+
+#### 示例
+
+- [主动健康检查](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/health_checking#arch-overview-health-checking)：Envoy通过对上游主机进行健康检查，调整优先级和地区权重以适应不可用的主机。
+
+- [区域感知路由](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/zone_aware#arch-overview-load-balancing-zone-aware-routing)：这种方法能使Envoy优先选择距离较近的端点，无需在控制平面中显式设置优先级。
+
+- [负载均衡算法](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/load_balancers#arch-overview-load-balancing-types)：Envoy可以使用多种算法来利用所提供的权重决定选择哪一个主机。
+
+#### 全局负载均衡
+
+全局负载均衡是指由一个全局决策机构来决定如何在主机间分配负载。对Envoy而言，这由控制平面来进
+行，它通过指定优先级、地区权重、端点权重和端点健康等参数来调整对各个端点的负载应用。
+
+一个简单的例子是控制平面根据网络拓扑把主机分配到不同优先级，以确保网络跳数更少的主机得到优先。
+这与区域感知路由相似，但是由控制平面而非Envoy执行。控制平面中实施的一个优势是它能够解决区域感
+知路由的某些限制。
+
+更高级的设置可能涉及向控制平面报告资源使用情况，以便它调整端点或地区的权重，反映当前资源使用状
+况，尽可能将新请求路由至空闲主机而非繁忙主机。
+
+#### 分布式与全局
+
+复杂部署通常结合使用这两种特性。全局负载均衡用于定义高层次的路由优先级和权重，而分布式负载均
+衡则用于实时响应系统变化，如使用主动健康检查。将这两者结合，可以实现最佳效果：一个具有全局视
+角的机构能在宏观层面控制流量，同时各个代理能够在微观层面迅速适应变化。
