@@ -1,5 +1,5 @@
 ---
-title: "Envoy 介绍"
+title: "Envoy 介绍之（一）"
 date: 2023-12-11T12:00:00+08:00
 isCJKLanguage: true
 Description: "Envoy 官网介绍文档的中文翻译"
@@ -8,8 +8,10 @@ Categories: ["envoy"]
 DisableComments: false
 ---
 
+原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
-Envoy 官网介绍文档的中文翻译, 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
+Envoy 官网介绍文档的中文翻译(概述、监听和HTTP部分)
+
 <!--more-->
 
 # 1. 什么是 Envoy
