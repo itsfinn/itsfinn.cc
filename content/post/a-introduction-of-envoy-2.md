@@ -297,3 +297,75 @@ Envoy HTTP健康检查器支持[service_name_matcher](https://www.envoyproxy.io/
 ### 健康降级
 
 在使用HTTP健康检查器时，上游主机可以返回`x-envoy-degraded`，以通知健康检查器该主机已降级。有关这如何影响负载均衡，请参见[这里](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/degraded#arch-overview-load-balancing-degraded)。
+
+
+
+## 连接池
+
+Envoy针对HTTP流量提供了一种抽象的连接池机制，这些机制是基于底层的线路协议（HTTP/1.1、HTTP/2、HTTP/3）实现的。
+利用这些过滤器的代码无需关心底层协议是否具备多路复用的能力。在实践中，这些底层实现主要具备以下特性：
+
+### HTTP/1.1
+
+HTTP/1.1连接池会根据需要向上游主机申请连接，直至触达熔断限制。请求将被分配到变得可用的连接上，无论是因为某个连接已经处理完之前的请求，还是因为一个新的连接已经准备好接受首个请求。HTTP/1.1连接池不实行请求管道化，这样当上游连接中断时，只有一个下游请求需要被重置。
+
+### HTTP/2
+
+HTTP/2连接池能够在单一连接上多路复用多个请求，直至触及[最大并发流限制](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-quicprotocoloptions-max-concurrent-streams)和[每连接请求上限](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-max-requests-per-connection)。为了处理请求，HTTP/2连接池将建立必要数量的连接。在没有额外限制的情况下，这通常意味着只需一个连接。当收到GOAWAY帧或连接达到[每连接请求上限](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-max-requests-per-connection)时，连接池会逐渐关闭受影响的连接。一旦连接达到其[并发流的最大限制](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-quicprotocoloptions-max-concurrent-streams)，该连接将被视为忙碌状态，直到释放出流资源。只有当有待处理的请求且没有可用的连接时，系统才会建立新的连接（但不超过连接的熔断器限制）。作为反向代理的Envoy更倾向于使用HTTP/2协议，因为连接几乎不会中断。
+
+### HTTP/3
+
+HTTP/3连接池能够在单一连接上多路复用多个请求，直至触及[最大并发流限制](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-quicprotocoloptions-max-concurrent-streams)和[每连接请求上限](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-max-requests-per-connection)。为了处理请求，HTTP/3连接池将建立必要数量的连接。在没有额外限制的情况下，这通常意味着只需一个连接。当收到GOAWAY帧或连接达到[每连接请求上限](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-max-requests-per-connection)时，连接池会逐渐关闭受影响的连接。一旦连接达到其[并发流的最大限制](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-quicprotocoloptions-max-concurrent-streams)，该连接将被视为忙碌状态，直到释放出流资源。只有当有待处理的请求且没有可用的连接时，系统才会建立新的连接（但不超过连接的熔断器限制）。
+
+### 自动协议选择
+
+对于充当前向代理的Envoy，推荐使用[AutoHttpConfig](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-msg-extensions-upstreams-http-v3-httpprotocoloptions-autohttpconfig)进行配置，该配置通过[http_protocol_options](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-msg-extensions-upstreams-http-v3-httpprotocoloptions)
+设定。默认它会利用TCP和ALPN选择HTTP/2和HTTP/1.1中最适合的协议。
+
+对于集成了HTTP/3的自动HTTP配置，需要通过[alternate_protocols_cache_options](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-field-extensions-upstreams-http-v3-httpprotocoloptions-autohttpconfig-alternate-protocols-cache-options)设定备用协议缓
+存。HTTP/3连接将仅尝试那些宣传支持HTTP/3的服务器，这种支持可能是通过[HTTP备用服务](https://tools.ietf.org/html/rfc7838)、[HTTPS
+DNS资源记录](https://datatracker.ietf.org/doc/html/draft-ietf-dnsop-svcb-https-04)，或将来手动配置的“QUIC提示”来表明的。如果没有这样的宣传，则会转而使用HTTP/2或HTTP/1。
+
+在尝试使用HTTP/3时，Envoy会优先尝试建立QUIC连接。如果300毫秒内QUIC连接未建立，Envoy将同时
+也会尝试建立TCP连接。无论哪种握手成功，都会被用来初始化流。但若TCP和QUIC连接都成功建立，
+系统将最终优先选择QUIC。
+
+由于HTTP/3运行于QUIC（基于UDP）之上，而非TCP（HTTP/1和HTTP/2采用的协议），网络设备屏蔽
+UDP流量的情况相对常见，这也可能导致HTTP/3被封锁。因此，上游HTTP/3的连接尝试可能会遭遇网络
+阻断，进而回退至使用HTTP/2或HTTP/1。虽然这一功能仍在alpha测试阶段，需要经过生产环境的充
+分验证，但它已经准备好用于生产环境。
+
+### Happy Eyeballs（快乐眼球算法）支持
+
+Envoy支持[RFC8305](https://tools.ietf.org/html/rfc8305)定义的Happy Eyeballs算法，用以优化上游TCP连接。对于使用[LOGICAL_DNS](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-enum-value-config-cluster-v3-cluster-discoverytype-logical-dns)
+的集群，可通过将[config.cluster.v3.Cluster.DnsLookupFamily](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-enum-config-cluster-v3-cluster-dnslookupfamily)中的DNS IP地址解析策略设置为ALL，
+以启用该功能并返回IPv4和IPv6地址。而对于使用[EDS](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-enum-value-config-cluster-v3-cluster-discoverytype-eds)的集群，则可通过[additional_addresses](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/endpoint/v3/endpoint_components.proto#envoy-v3-api-field-config-endpoint-v3-endpoint-additional-addresses)字段
+为主机指定额外的IP地址来实现该功能。这些额外指定的地址将追加到[address](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/endpoint/v3/endpoint_components.proto#envoy-v3-api-field-config-endpoint-v3-endpoint-address)字段中指定的地址列表。
+
+所有地址列表会根据 Happy Eyeballs 规范进行排序。首先尝试连接列表中的第一个地址，
+如果连接成功，将使用该连接。如果连接失败，则尝试列表中的下一地址。如果300ms后仍未建立连接，
+系统将尝试备份连接到列表中的下一个地址。
+
+最终，如果某个地址的连接尝试成功，则此时将使用该连接；如果所有尝试都失败，则系统将报告一个连
+接错误。
+
+### 连接池数量
+
+每个集群中的每个主机都会配置有一个或多个连接池。如果集群仅配置了一种协议，那么主机可能仅需一
+个连接池。但是，如果集群支持多种上游协议，并且没有采用ALPN，那么会为每种协议分配一个连接池。
+此外，以下特性也各自需要一个独立的连接池：
+
+- [路由优先级](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/http_routing#arch-overview-http-routing-priority)
+- [套接字选项](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/address.proto#envoy-v3-api-field-config-core-v3-bindconfig-socket-options)
+- [传输套接字选项](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/base.proto#envoy-v3-api-msg-config-core-v3-transportsocket)（例如TLS）
+- 那些被标记为与上游连接共享且可哈希的下游[过滤器状态对象](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/data_sharing_between_filters#arch-overview-advanced-filter-state-sharing)。
+
+每个工作线程都会为它所服务的每个集群维护自己的连接池。因此，如果一个Envoy实例运行了两个线程，
+并且有一个集群同时支持HTTP/1和HTTP/2，那么至少会存在4个连接池。
+
+### 健康检查交互
+
+如果Envoy启用了主动或被动健康检查功能，当主机由可用变为不可用时，所有的连接池连接都将关闭。
+若该主机重新被纳入负载均衡轮询，将创建新连接，这样做将最大化规避潜在流量问题的机会，无论这些
+问题是由ECMP路由还是其他因素造成的。
+
