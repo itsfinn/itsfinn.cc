@@ -10,7 +10,7 @@ DisableComments: false
 
 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
-Envoy 官网介绍文档的中文翻译(上游集群部分): 聚合集群、异常检测、熔断机制
+Envoy 官网介绍文档的中文翻译(上游集群部分): 聚合集群、异常检测、熔断机制、上游网络过滤器、负载报告服务、负载均衡策略
 <!--more-->
 
 
@@ -67,7 +67,7 @@ cluster_type:
 聚合集群采用了分层负载均衡算法，其中最高层会根据每个集群内各优先级的整体健康状况来分配流量。在本示例中，聚合
 集群由两个不同的集群组成，这与之前提到的配置所描述的情况有所区别。
 
-![envoy loadbalancing example](envoy-loadbalancing-exmaple.png)
+![envoy loadbalancing example](../../image/envoy-loadbalancing-exmaple.png)
 
 注意事项：上述负载均衡策略采用了默认的[超额配给因子](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/overprovisioning#arch-overview-load-balancing-overprovisioning-factor)1.4。这表示，即便某个优先级中只有80%的节点处于健康状态，
 在80 * 1.4 > 100的计算下，这个优先级也能被认定为完全健康。
@@ -324,3 +324,51 @@ Envoy 支持多种类型的完全分布式（不协调）断路功能：
 若需要禁用电路断路器，可将各项阈值设置为系统允许的最大值。
 
 需要注意的是，当触发断路时，如果是HTTP请求，路由过滤器会在响应中设置 x-envoy-overloaded 头部信息。
+
+## 上游网络过滤器
+
+上游集群能够加入网络层(L3/L4) 的过滤器。需要特别指出的是，使用这些网络过滤器前，必须先在代码中将其注册为上游过滤器。现阶段，Envoy尚未提供内置的上游过滤器。这些过滤器被用于上游主机的连接过程中，
+并使用与下游连接相同的API接口。无论何时向上游主机发送数据，都会触发写入回调函数；同样地，接收上游主机数据时，读取回调函数也会被调用。
+
+## 负载报告服务（LRS）
+
+负载报告服务（LRS）为Envoy提供了一种机制，让它能够按照固定的时间间隔向管理服务器发送负载数据。
+
+此服务建立的是一个与管理服务器之间的双向数据流。一旦建立连接，管理服务器就可以对它想要获取负载数据的特定节点发送LoadStatsResponse。接着，该节点上的Envoy便会定期发送LoadStatsRequest，频率取决于设定的负载报告周期。
+
+包含LRS设置的Envoy配置文件路径为/examples/load-reporting-service/service-envoy-w-lrs.yaml(注: 这个文件在 envoy 的 github 仓库里)。
+
+## 负载均衡策略
+
+Envoy支持为每个集群[配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-load-balancing-policy)独立的、可扩展的负载均衡策略，开发者还可以通过[API](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/load_balancing_policies/load_balancing_policies#envoy-v3-api-config-load-balancer-policies)进行设置。
+
+开发者可以使用C++语言来开发符合自己需求的可配置负载均衡策略。
+
+> **注意**
+>
+> Envoy在早期版本中是通过[枚举](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-lb-policy)来指定负载均衡策略的。为了保持向后兼容，这种枚举方式仍然可用，但不再推荐使用。
+
+现在推荐使用的是[可扩展的负载均衡策略](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/load_balancing_policies/load_balancing_policies#envoy-v3-api-config-load-balancer-policies)。
+
+举个例子，我们来看看随机负载均衡策略：
+
+```yaml
+name: example_cluster
+type: STRICT_DNS
+connect_timeout: 0.25s
+load_assignment:
+  cluster_name: example_cluster
+  endpoints:
+  - lb_endpoints:
+    - endpoint:
+        address:
+          socket_address:
+            address: example.com
+            port_value: 80
+load_balancing_policy:
+  policies:
+  - typed_extension_config:
+      name: envoy.load_balancing_policies.random
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.load_balancing_policies.random.v3.Random
+```
