@@ -67,7 +67,7 @@ cluster_type:
 聚合集群采用了分层负载均衡算法，其中最高层会根据每个集群内各优先级的整体健康状况来分配流量。在本示例中，聚合
 集群由两个不同的集群组成，这与之前提到的配置所描述的情况有所区别。
 
-![envoy loadbalancing example](envoy-loadbalancing-exmaple.png)
+![envoy loadbalancing example](../../image/envoy-loadbalancing-exmaple.png)
 
 注意事项：上述负载均衡策略采用了默认的[超额配给因子](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/overprovisioning#arch-overview-load-balancing-overprovisioning-factor)1.4。这表示，即便某个优先级中只有80%的节点处于健康状态，
 在80 * 1.4 > 100的计算下，这个优先级也能被认定为完全健康。
