@@ -32,3 +32,22 @@ Envoy 不仅支持监听器中的 TLS 终止，还能在与上游集群连接时
 - BoringSSL 私钥方法：TLS 私钥操作（包括签名和解密）可通过[扩展](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/transport_sockets/tls/v3/common.proto#envoy-v3-api-msg-extensions-transport-sockets-tls-v3-privatekeyprovider)异步执行，使得 Envoy 能够支持多种密钥
   管理方案（例如 TPM）和 TLS 加速。该机制采用 [BoringSSL 的私钥方法接口](https://github.com/google/boringssl/blob/c0b4c72b6d4c6f4828a373ec454bd646390017d4/include/openssl/ssl.h#L1169)。
 - OCSP Stapling：可以将在线证书状态协议（OCSP）的响应捆绑到证书上。
+
+## 底层实现
+
+Envoy 当前使用 BoringSSL 作为其 TLS 提供者。
+
+## FIPS 140-2
+
+使用 Bazel 选项 `--define boringssl=fips` 进行构建, 遵循 [BoringCrypto 模块安全策略](https://csrc.nist.gov/CSRC/media/projects/cryptographic-module-validation-program/documents/security-policies/140sp3678.pdf)的构建指南，BoringSSL 可以配置为 [FIPS-complianthttps://boringssl.googlesource.com/boringssl/+/master/crypto/fipsmodule/FIPS.md) 模式。目前，此选项仅在 Linux-x86_64 上可用。
+
+要验证 FIPS 构建是否正确，可以检查 `--version` 输出中是否含有 `BoringSSL-FIPS`。
+
+请注意，仅使用 FIPS-compliant 模块是达成 FIPS 合规的必要条件，但不是充分条件，
+根据不同情况，可能还需要采取其他措施。这些额外的措施可能包括仅使用经批准的算法，
+或者仅使用由以 FIPS-approved 模式运行的模块生成的私钥。更多信息，请参阅
+ [BoringCrypto 模块安全策略](https://csrc.nist.gov/CSRC/media/projects/cryptographic-module-validation-program/documents/security-policies/140sp3678.pdf)或 [认证的 CMVP 实验室](https://csrc.nist.gov/projects/testing-laboratories)。
+
+另外，请知悉，FIPS-compliant 构建所依赖的 BoringSSL 版本早于非 FIPS 构建的版本，
+并且不支持最新的 QUIC API。
+
