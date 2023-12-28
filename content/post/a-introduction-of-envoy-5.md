@@ -51,3 +51,69 @@ Envoy 当前使用 BoringSSL 作为其 TLS 提供者。
 另外，请知悉，FIPS-compliant 构建所依赖的 BoringSSL 版本早于非 FIPS 构建的版本，
 并且不支持最新的 QUIC API。
 
+# JSON Web Token（JWT）认证机制
+
+- [HTTP过滤器的配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/jwt_authn_filter#config-http-filters-jwt-authn)说明。
+
+JWT认证过滤器用于检查传入请求中的[JSON Web Token（JWT）](https://tools.ietf.org/html/rfc7519)
+是否有效。该过滤器通过验证JWT的签名、接收者以及发行者来确
+保JWT的有效性，这些验证基于[HTTP过滤器的配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/jwt_authn_filter#config-http-filters-jwt-authn)。JWT认证过
+滤器可以配置为：一旦发现JWT无效，立即拒绝请求；或者将JWT
+的有效载荷传递给后续过滤器，延后做出处理决定。
+
+JWT认证过滤器能够根据请求的不同条件来检查JWT。例如，它
+可以被设置为只在特定路径上进行JWT检查，从而允许某些路径不
+进行JWT认证。这特别适用于无需JWT认证即可公开访问的路径。
+
+JWT认证过滤器能够从请求的不同位置提取JWT，并且能够对同一请求施加
+多重JWT校验条件。用于JWT签名验证的[JSON Web Key Set（JWKS）](https://tools.ietf.org/html/rfc7517)
+可以有两种配置方式：直接内嵌于过滤器配置，或者通过HTTP/HTTPS
+从远程服务器获取。
+
+此外，JWT认证过滤器还能将成功验证的JWT的头部和有效载荷记录到
+[Dynamic State](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/data_sharing_between_filters#arch-overview-data-sharing-between-filters)
+中。这样，后续过滤器就能利用这些信息，基于JWT有效载荷做出决策。
+
+# 外部授权
+
+- [网络过滤器配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/ext_authz_filter#config-network-filters-ext-authz)
+
+- [HTTP过滤器配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/ext_authz_filter#config-http-filters-ext-authz)
+
+外部授权过滤器负责调用授权服务，以确定传入请求是否获得授权。该过
+滤器既可以作为网络过滤器配置，也可以作为HTTP过滤器配置，还可以两
+者同时使用。如果网络过滤器判定请求未获授权，那么将关闭连接。相应
+地，如果HTTP过滤器判定请求未授权，则会以403 Forbidden（禁止）
+状态码拒绝请求。
+
+> **提示**
+>
+> 建议将这些过滤器设置为过滤器链的首个环节，这样可以确保在其他过滤器处理
+> 请求前先进行授权。
+
+外部授权服务的集群配置可以是静态的，也可以通过[Cluster Discovery Service](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/upstream/cluster_manager/cds#config-cluster-manager-cds)
+动态设置。如果外部服务在处理请求时不可用，那么是否授权该请求将由
+[网络过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/ext_authz/v3/ext_authz.proto#envoy-v3-api-msg-extensions-filters-network-ext-authz-v3-extauthz)
+或
+[HTTP过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/http/ext_authz/v3/ext_authz.proto#envoy-v3-api-msg-extensions-filters-http-ext-authz-v3-extauthz)
+中的failure_mode_allow配置决定。如果此项配置为true，
+则请求在失败时也会被放行（fail-open）；如果为false，则请求会被拒绝。
+默认情况下，此配置为false。
+
+## 服务定义
+
+以下服务定义用于将流量上下文传送到外部授权服务。授权服务所接收的请
+求内容由[CheckRequest](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#envoy-v3-api-msg-service-auth-v3-checkrequest)定义。
+
+
+- [Attribute context (proto)](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/attribute_context.proto)
+    - [service.auth.v3.AttributeContext](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/attribute_context.proto#service-auth-v3-attributecontext)
+    - [service.auth.v3.AttributeContext.Peer](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/attribute_context.proto#service-auth-v3-attributecontext-peer)
+    - [service.auth.v3.AttributeContext.Request](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/attribute_context.proto#service-auth-v3-attributecontext-request)
+    - [service.auth.v3.AttributeContext.HttpRequest](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/attribute_context.proto#service-auth-v3-attributecontext-httprequest)
+    - [service.auth.v3.AttributeContext.TLSSession](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/attribute_context.proto#service-auth-v3-attributecontext-tlssession)
+- [Authorization service (proto)](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto)
+    - [service.auth.v3.CheckRequest](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#service-auth-v3-checkrequest)
+    - [service.auth.v3.DeniedHttpResponse](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#service-auth-v3-deniedhttpresponse)
+    - [service.auth.v3.OkHttpResponse](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#service-auth-v3-okhttpresponse)
+    - [service.auth.v3.CheckResponse](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#service-auth-v3-checkresponse)
