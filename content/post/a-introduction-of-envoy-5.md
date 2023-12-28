@@ -117,3 +117,574 @@ JWT认证过滤器能够从请求的不同位置提取JWT，并且能够对同�
     - [service.auth.v3.DeniedHttpResponse](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#service-auth-v3-deniedhttpresponse)
     - [service.auth.v3.OkHttpResponse](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#service-auth-v3-okhttpresponse)
     - [service.auth.v3.CheckResponse](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/service/auth/v3/external_auth.proto#service-auth-v3-checkresponse)
+
+# 基于角色的访问控制
+
+- [网络过滤器配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/ext_authz_filter#config-network-filters-ext-authz)
+
+- [HTTP过滤器配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/ext_authz_filter#config-http-filters-ext-authz)
+
+基于角色的访问控制（RBAC）过滤器负责检查传入请求是否有相应的授权。
+不同于外部授权，RBAC过滤器直接在Envoy进程内部进行权限检查，这一过
+程基于过滤器配置中定义的策略列表。
+
+RBAC过滤器既可作为
+[网络过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/rbac_filter#config-network-filters-rbac)
+配置，也可作为
+[HTTP过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/rbac_filter#config-http-filters-rbac)
+配置，还可以两者
+同时使用。如果网络过滤器判定请求未获授权，那么将关闭连接。相应地，如果
+HTTP过滤器判定请求未授权，则会以403 Forbidden（禁止）状态码拒绝请求。
+
+RBAC过滤器的规则可以通过配置一系列[策略](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/rbac/v3/rbac.proto#envoy-v3-api-field-config-rbac-v3-rbac-policies)来设置，也可以使用[匹配的API](https://www.envoyproxy.io/docs/envoy/v1.28.0/xds/type/matcher/v3/matcher.proto#envoy-v3-api-msg-xds-type-matcher-v3-matcher)进行
+配置。
+
+## 策略
+
+RBAC过滤器根据一系列[策略](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/rbac/v3/rbac.proto#envoy-v3-api-field-config-rbac-v3-rbac-policies)来检查请求。每个策略包含了一组[权限](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/rbac/v3/rbac.proto#envoy-v3-api-msg-config-rbac-v3-permission)和一组[主体(principals. )](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/rbac/v3/rbac.proto#envoy-v3-api-msg-config-rbac-v3-principal)。
+权限定义了请求可执行的操作，如HTTP请求的方法和路径。主体定义了请求的下游
+客户端标识，如下游客户端证书中的URI SAN。当权限和主体同时满足时，视为
+策略匹配成功。
+
+## 匹配器
+
+除了定义[策略](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/rbac/v3/rbac.proto#envoy-v3-api-field-config-rbac-v3-rbac-policies)外，RBAC过滤器还可以通过[匹配的API](https://www.envoyproxy.io/docs/envoy/v1.28.0/xds/type/matcher/v3/matcher.proto#envoy-v3-api-msg-xds-type-matcher-v3-matcher)来配置。在RBAC网络过滤器和
+HTTP过滤器中都可以使用[网络输入](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/matching/matching_api#extension-category-envoy-matching-network-input)，而HTTP输入仅限于HTTP过滤器中使用。
+
+[RBAC的匹配器扩展](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/rbac/matchers#api-v3-config-rbac-matchers)不支持[匹配的API](https://www.envoyproxy.io/docs/envoy/v1.28.0/xds/type/matcher/v3/matcher.proto#envoy-v3-api-msg-xds-type-matcher-v3-matcher)。
+
+## 影子策略与影子匹配器
+
+可以为过滤器配置影子策略或影子匹配器，它们不会实际影响请求（即不拒绝请求），
+它们的作用仅限于输出统计数据和记录操作结果。这有助于在将规则部署到生产环境
+之前进行测试。
+
+## 条件
+
+除了预设的权限和主体外，策略还可以根据需要提供一个使用[通用表达式语言](https://github.com/google/cel-spec/blob/master/doc/intro.md)
+(Common Expression Language, CEL) 编写的授权条件。这个条件是策略匹配必须
+满足的附加要求。例如，以下条件用于检测请求路径是否以 `/v1/` 开头：
+
+`
+call_expr:
+  function: startsWith
+  args:
+  - select_expr:
+     operand:
+       ident_expr:
+         name: request
+     field: path
+  - const_expr:
+     string_value: /v1/
+`
+
+Envoy 提供了众多[请求属性](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/advanced/attributes#arch-overview-request-attributes)，以便实现富有表现力的策略。这些属性大多数是可选的，
+并且会根据属性的类型提供默认值。CEL 支持使用 `has()` 语法来检查属性和映射
+是否存在，比如 `has(request.referer)`。
+
+# Envoy威胁模型
+
+我们在此详细说明Envoy威胁模型，该模型对Envoy的操作者、开发人员以及安全研究人员都十分重要。
+关于安全发布流程的更多信息，请访问 https://github.com/envoyproxy/envoy/security/policy 。
+
+## 数据的机密性、完整性和系统的可用性
+
+数据的机密性和完整性受损是我们极其重视的问题。对于Envoy操作者来说，系统的可用性—尤其是与
+拒绝服务(DoS)攻击和资源枯竭相关的问题—也是重大的安全挑战，这一点对于在边缘计算环境中部署Envoy的用户尤其如此。
+
+我们将针对满足以下标准的信息披露启动安全发布程序：
+
+- 所有引起数据机密性或完整性损失的问题都将触发安全发布流程。
+- 诸如Query-of-Death (QoD) 或资源耗尽的可用性问题需要满足以下所有条件才会触发安全发布流程：
+    - 受影响的组件被标记为加固（详见核心及扩展部分的加固组件列表）。
+    - 问题发生的流量类型（上游或下游）与组件的加固标签一致。例如，被标记为“对下游不信任加固”的组件，受到下游请求影响。
+    - 资源耗尽的问题还需要满足以下额外条件：
+        - 如果现有的超时机制无法覆盖，或者设置短超时值不现实的情况下，需要同时满足：
+            - 内存耗尽问题，包括请求内存使用量超过配置的头部或高水位限制100倍以上的情况。比如，10 KiB的客户端请求导致Envoy消耗了1 MiB的内存；
+            - CPU使用极度不对等，Envoy的CPU使用量至少是客户端的100倍。
+
+Envoy在处理CPU和内存DoS攻击方面的可用性策略仍在发展中，
+尤其是对于蛮力攻击。我们认识到，蛮力攻击（例如放大因子
+低于100的攻击）很可能会对作为云服务基础设施的一部分或被
+僵尸网络利用的Envoy部署构成威胁。我们会持续公开迭代和修
+复已知的资源问题，比如过载管理和水位线的改进。对于那些可
+能对现有Envoy部署构成风险的蛮力攻击披露，我们会启动安全
+处理程序。
+
+请注意，目前Envoy的默认设置在可用性方面并不被认为是安全的。
+运维人员必须显式地配置水位线、过载管理器、断路器以及Envoy的
+其他资源相关功能，以确保健全的可用性保障。对于因缺少安全默认
+配置而引发的安全问题，我们不会采取任何行动。我们将随着时间的
+推移致力于提供更安全的默认配置，但是由于需要考虑向后兼容性和
+性能问题，这将需要遵循破坏性更改的弃用政策。
+
+## 数据平面和控制平面
+
+我们将威胁模型分为数据平面和控制平面，这与Envoy从架构上对这
+些概念的内部区分相呼应。Envoy的核心组件被设计为能够抵御来
+自不受信任的下游客户端和上游服务端的威胁。因此，在风险评估
+中，我们最关注的是不受信任的下游客户端流量或上游服务器流量对
+数据平面构成的威胁。这反映了Envoy作为边缘服务器的使用场景，
+以及作为服务网格中与不可信服务交互的网络组件的使用情况。
+
+控制平面的管理服务器通常被视为可信赖的。因此，我们并不担心xDS
+传输协议可能遭受的线级攻击。然而，通过xDS传递给Envoy的配置
+可能来自不受信任的来源，且可能未经彻底的清理。例如，服务运维人
+员可能在同一个Envoy上托管多个租户，租户可能会在
+RouteConfiguration中设定用于头部匹配的正则表达式。在这种场景下，
+正如上文所述，我们期待Envoy能够从保密性、完整性和可用性的角度
+抵御恶意配置的风险。
+
+我们通常假设在请求处理过程中被调用的服务，比如外部授权、凭证供
+应商、速率限制服务等，是可信的。如果不是这样的情况，相关的扩展
+会在其文档中明确声明。
+
+## 核心和扩展
+
+Envoy核心中的所有内容均可用于不受信任和受信任的部署环境，
+唯一的例外是明确标为alpha状态的特性；alpha状态的特性仅支持
+在受信任的部署中使用，并不适用于下述的威胁模型。因此，稳定版
+的核心应当基于此模型进行加固。与核心代码相关的安全问题一般会
+触发本文所述的安全发布流程。
+
+> **注意**
+>
+> 以下提到的[contrib](https://www.envoyproxy.io/docs/envoy/v1.28.0/start/install#install-contrib)
+> 扩展并不正式受到威胁模型或Envoy安全团队的
+> 覆盖。所有下述情况均为最大努力基础。
+
+以下扩展旨在针对不受信任的下游和上游流量进行加固：
+
+# 扩展安全: robust_to_untrusted_downstream_and_upstream
+
+- envoy.bootstrap.internal_listener
+- envoy.clusters.eds
+- envoy.clusters.logical_dns
+- envoy.clusters.original_dst
+- envoy.clusters.static
+- envoy.clusters.strict_dns
+- envoy.filters.http.decompressor
+- envoy.filters.http.set_metadata
+- envoy.filters.http.upstream_codec
+- envoy.filters.listener.tls_inspector
+- envoy.filters.network.connection_limit
+- envoy.formatter.cel (alpha)
+- envoy.formatter.metadata (alpha)
+- envoy.formatter.req_without_query (alpha)
+- envoy.health_check.event_sinks.file
+- envoy.http.early_header_mutation.header_mutation (alpha)
+- envoy.http.stateful_header_formatters.preserve_case
+- envoy.internal_redirect_predicates.allow_listed_routes
+- envoy.internal_redirect_predicates.previous_routes
+- envoy.internal_redirect_predicates.safe_cross_scheme
+- envoy.io_socket.user_space
+- envoy.load_balancing_policies.cluster_provided
+- envoy.load_balancing_policies.maglev
+- envoy.load_balancing_policies.random
+- envoy.load_balancing_policies.ring_hash
+- envoy.load_balancing_policies.round_robin
+- envoy.load_balancing_policies.subset
+- envoy.matching.matchers.cel_matcher
+- envoy.matching.matchers.ip
+- envoy.matching.matchers.runtime_fraction
+- envoy.network.dns_resolver.apple
+- envoy.network.dns_resolver.cares
+- envoy.network.dns_resolver.getaddrinfo
+- envoy.path.match.uri_template.uri_template_matcher
+- envoy.path.rewrite.uri_template.uri_template_rewriter
+- envoy.quic.deterministic_connection_id_generator (alpha)
+- envoy.regex_engines.google_re2
+- envoy.request_id.uuid
+- envoy.transport_sockets.alts
+- envoy.transport_sockets.internal_upstream
+- envoy.transport_sockets.starttls
+- envoy.transport_sockets.tcp_stats (alpha)
+- envoy.transport_sockets.tls
+- envoy.transport_sockets.upstream_proxy_protocol
+- envoy.udp_packet_writer.default
+- envoy.udp_packet_writer.gso
+
+以下扩展设计上应当避免面对数据平面的攻击向量，因此它们应对来自
+不受信任的下游和上游的流量具备较强的鲁棒性：
+
+# 扩展安全: data_plane_agnostic
+
+- envoy.grpc_credentials.aws_iam (alpha)
+- envoy.grpc_credentials.file_based_metadata (alpha)
+- envoy.key_value.file_based (alpha)
+- envoy.resource_monitors.fixed_heap (alpha)
+- envoy.resource_monitors.injected_resource (alpha)
+- envoy.stat_sinks.dog_statsd
+- envoy.stat_sinks.graphite_statsd (alpha)
+- envoy.stat_sinks.hystrix
+- envoy.stat_sinks.metrics_service
+- envoy.stat_sinks.open_telemetry (alpha)
+- envoy.stat_sinks.statsd
+- envoy.stat_sinks.wasm (alpha)
+- envoy.watchdog.profile_action (alpha)
+
+以下扩展目的在于加强对不受信任下游的抵抗力，同时假定上游是
+可信的：
+
+# 扩展安全: robust_to_untrusted_downstream
+
+- envoy.access_loggers.file
+- envoy.access_loggers.http_grpc
+- envoy.access_loggers.open_telemetry
+- envoy.access_loggers.stderr
+- envoy.access_loggers.stdout
+- envoy.access_loggers.tcp_grpc
+- envoy.clusters.dynamic_forward_proxy
+- envoy.compression.brotli.compressor
+- envoy.compression.brotli.decompressor
+- envoy.compression.gzip.compressor
+- envoy.compression.gzip.decompressor
+- envoy.compression.zstd.compressor
+- envoy.filters.http.buffer
+- envoy.filters.http.compressor
+- envoy.filters.http.cors
+- envoy.filters.http.csrf
+- envoy.filters.http.dynamic_forward_proxy
+- envoy.filters.http.ext_authz
+- envoy.filters.http.fault
+- envoy.filters.http.grpc_json_transcoder
+- envoy.filters.http.grpc_web
+- envoy.filters.http.header_to_metadata
+- envoy.filters.http.health_check
+- envoy.filters.http.ip_tagging
+- envoy.filters.http.json_to_metadata (alpha)
+- envoy.filters.http.jwt_authn
+- envoy.filters.http.kill_request
+- envoy.filters.http.lua
+- envoy.filters.http.oauth2 (alpha)
+- envoy.filters.http.on_demand
+- envoy.filters.http.original_src (alpha)
+- envoy.filters.http.ratelimit
+- envoy.filters.http.rbac
+- envoy.filters.http.router
+- envoy.filters.http.sxg (alpha) (contrib builds only)
+- envoy.filters.listener.local_ratelimit
+- envoy.filters.listener.original_dst
+- envoy.filters.listener.original_src (alpha)
+- envoy.filters.listener.proxy_protocol
+- envoy.filters.network.client_ssl_auth (contrib builds only)
+- envoy.filters.network.envoy_mobile_http_connection_manager
+- envoy.filters.network.ext_authz
+- envoy.filters.network.http_connection_manager
+- envoy.filters.network.local_ratelimit
+- envoy.filters.network.ratelimit
+- envoy.filters.network.rbac
+- envoy.filters.network.tcp_proxy
+- envoy.filters.udp.dns_filter (alpha)
+- envoy.filters.udp.session.dynamic_forward_proxy (alpha)
+- envoy.filters.udp.session.http_capsule (alpha)
+- envoy.filters.udp_listener.udp_proxy
+- envoy.health_checkers.grpc
+- envoy.health_checkers.http
+- envoy.health_checkers.tcp
+- envoy.http.original_ip_detection.custom_header
+- envoy.http.original_ip_detection.xff
+- envoy.matching.common_inputs.environment_variable
+- envoy.matching.matchers.consistent_hashing
+- envoy.quic.crypto_stream.server.quiche (alpha)
+- envoy.quic.proof_source.filter_chain (alpha)
+- envoy.quic.server_preferred_address.fixed (alpha)
+- envoy.retry_host_predicates.omit_canary_hosts
+- envoy.retry_host_predicates.omit_host_metadata
+- envoy.retry_host_predicates.previous_hosts
+- envoy.retry_priorities.previous_priorities
+- envoy.route.early_data_policy.default
+- envoy.tls.key_providers.cryptomb (alpha) (contrib builds only)
+- envoy.tls.key_providers.qat (alpha) (contrib builds only)
+- envoy.tracers.datadog
+- envoy.tracers.xray
+- envoy.tracers.zipkin
+- envoy.upstreams.http.generic
+- envoy.upstreams.http.http
+- envoy.upstreams.http.http_protocol_options
+- envoy.upstreams.http.tcp
+- envoy.upstreams.http.udp (alpha)
+- envoy.upstreams.tcp.generic
+
+以下扩展只有在下游和上游都被认为是可信赖的情况下才推荐使用：
+
+# 扩展安全: requires_trusted_downstream_and_upstream
+
+- envoy.bootstrap.vcl (alpha) (contrib builds only)
+- envoy.clusters.aggregate
+- envoy.clusters.redis
+- envoy.compression.zstd.decompressor
+- envoy.filters.http.aws_lambda (alpha)
+- envoy.filters.http.aws_request_signing (alpha)
+- envoy.filters.http.checksum (alpha) (contrib builds only)
+- envoy.filters.http.dynamo (contrib builds only)
+- envoy.filters.http.golang (alpha) (contrib builds only)
+- envoy.filters.http.language (alpha) (contrib builds only)
+- envoy.filters.http.squash (contrib builds only)
+- envoy.filters.http.tap (alpha)
+- envoy.filters.listener.http_inspector
+- envoy.filters.network.dubbo_proxy (alpha)
+- envoy.filters.network.golang (alpha) (contrib builds only)
+- envoy.filters.network.mongo_proxy
+- envoy.filters.network.mysql_proxy (alpha) (contrib builds only)
+- envoy.filters.network.postgres_proxy (contrib builds only)
+- envoy.filters.network.redis_proxy
+- envoy.filters.network.rocketmq_proxy (alpha) (contrib builds only)
+- envoy.filters.network.sip_proxy (alpha) (contrib builds only)
+- envoy.filters.network.thrift_proxy
+- envoy.filters.network.zookeeper_proxy (alpha)
+- envoy.filters.sip.router (alpha) (contrib builds only)
+- envoy.filters.thrift.header_to_metadata (alpha)
+- envoy.filters.thrift.payload_to_metadata (alpha)
+- envoy.filters.thrift.rate_limit (alpha)
+- envoy.filters.thrift.router
+- envoy.health_checkers.redis
+- envoy.health_checkers.thrift (alpha)
+- envoy.matching.input_matchers.hyperscan (alpha) (contrib builds only)
+- envoy.network.connection_balance.dlb (alpha) (contrib builds only)
+- envoy.regex_engines.hyperscan (alpha) (contrib builds only)
+- envoy.router.cluster_specifier_plugin.golang (alpha) (contrib builds only)
+- envoy.tls.cert_validator.spiffe (alpha)
+- envoy.transport_sockets.raw_buffer
+- envoy.transport_sockets.tap (alpha)
+
+以下扩展的安全状况尚不明确：
+
+# 扩展安全: unknown
+
+- envoy.access_loggers.extension_filters.cel (alpha)
+- envoy.access_loggers.wasm (alpha)
+- envoy.bootstrap.wasm (alpha)
+- envoy.config.validators.minimum_clusters_validator
+- envoy.config_mux.delta_grpc_mux_factory
+- envoy.config_mux.sotw_grpc_mux_factory
+- envoy.config_subscription.ads
+- envoy.config_subscription.ads_collection
+- envoy.config_subscription.aggregated_delta_grpc_collection
+- envoy.config_subscription.aggregated_grpc_collection
+- envoy.config_subscription.delta_grpc
+- envoy.config_subscription.filesystem
+- envoy.config_subscription.filesystem_collection
+- envoy.config_subscription.grpc
+- envoy.config_subscription.rest
+- envoy.filters.http.adaptive_concurrency
+- envoy.filters.http.admission_control
+- envoy.filters.http.alternate_protocols_cache (alpha)
+- envoy.filters.http.bandwidth_limit
+- envoy.filters.http.cdn_loop (alpha)
+- envoy.filters.http.composite
+- envoy.filters.http.connect_grpc_bridge (alpha)
+- envoy.filters.http.ext_proc (alpha)
+- envoy.filters.http.gcp_authn (alpha)
+- envoy.filters.http.grpc_field_extraction (alpha)
+- envoy.filters.http.grpc_http1_bridge
+- envoy.filters.http.grpc_http1_reverse_bridge (alpha)
+- envoy.filters.http.grpc_stats (alpha)
+- envoy.filters.http.header_mutation (alpha)
+- envoy.filters.http.local_ratelimit
+- envoy.filters.http.set_filter_state (alpha)
+- envoy.filters.http.stateful_session (alpha)
+- envoy.filters.http.wasm (alpha)
+- envoy.filters.network.direct_response
+- envoy.filters.network.echo
+- envoy.filters.network.set_filter_state (alpha)
+- envoy.filters.network.sni_cluster
+- envoy.filters.network.sni_dynamic_forward_proxy (alpha)
+- envoy.filters.network.wasm (alpha)
+- envoy.http.stateful_session.cookie (alpha)
+- envoy.http.stateful_session.header (alpha)
+- envoy.load_balancing_policies.least_request
+- envoy.matching.actions.format_string
+- envoy.matching.custom_matchers.trie_matcher
+- envoy.matching.inputs.application_protocol
+- envoy.matching.inputs.cel_data_input
+- envoy.matching.inputs.destination_ip
+- envoy.matching.inputs.destination_port
+- envoy.matching.inputs.direct_source_ip
+- envoy.matching.inputs.dns_san
+- envoy.matching.inputs.filter_state
+- envoy.matching.inputs.query_params
+- envoy.matching.inputs.request_headers
+- envoy.matching.inputs.request_trailers
+- envoy.matching.inputs.response_headers
+- envoy.matching.inputs.response_trailers
+- envoy.matching.inputs.server_name
+- envoy.matching.inputs.source_ip
+- envoy.matching.inputs.source_port
+- envoy.matching.inputs.source_type
+- envoy.matching.inputs.subject
+- envoy.matching.inputs.transport_protocol
+- envoy.matching.inputs.uri_san
+- envoy.rate_limit_descriptors.expr
+- envoy.rbac.matchers.upstream_ip_port (alpha)
+- envoy.tracers.dynamic_ot
+- envoy.tracers.opencensus
+- envoy.transport_sockets.http_11_proxy (alpha)
+- envoy.upstream.local_address_selector.default_local_address_selector (alpha)
+- envoy.upstreams.tcp.tcp_protocol_options (alpha)
+- envoy.wasm.runtime.null (alpha)
+- envoy.wasm.runtime.v8 (alpha)
+- envoy.wasm.runtime.wamr (alpha)
+- envoy.wasm.runtime.wasmtime (alpha)
+- envoy.wasm.runtime.wavm (alpha)
+
+Envoy目前包含两个动态过滤器扩展支持加载可执行代码的：WASM和
+Lua。在这两种情况中，我们都假定动态加载的代码是受信任的。对于
+Lua，我们预期其运行环境能够在可信脚本的前提下，抵御不受信任的
+数据平面流量。WASM尚处于开发阶段，但预计最终将采取类似的安全
+态度。
+
+# 外部依赖项
+
+下面我们列举了可能会链接进Envoy可执行文件的外部依赖。我们没有
+包括那些仅在持续集成(CI)过程或开发工具中使用的依赖项。
+
+原文地址： https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/security/external_deps
+
+# Google漏洞奖励计划（VRP）
+
+Envoy是Google漏洞奖励计划（VRP）的参与者。该计划对所有安全研究
+者开放，按照以下规则报告漏洞可获得奖励。
+
+## 规则
+
+VRP的宗旨是为了正式表彰外部安全研究者对Envoy安全贡献的程序。
+漏洞需满足以下条件，才符合计划资格：
+
+1. 漏洞必须符合以下某一目标，通过提供的基于Docker的执行环境加
+   以证明，并且要与该计划的威胁模型保持一致。
+
+2. 漏洞必须报告至envoy-security@googlegroups.com，并在进行分类和
+   可能的安全版本发布期间维持保密。提交报告时请遵守披露指导原
+   则。披露SLO在此处有文档记录。一般而言，安全披露须遵循Linux
+   Foundation的隐私政策，并且VRP报告（包括报告者的电子邮件地址
+   和姓名）可自由与Google共享，用于VRP目的。
+
+3. 漏洞不应在公开论坛中被提前知晓，例如GitHub问题跟踪器、CVE
+   数据库（如果之前已与Envoy相关联）等。之前未与Envoy相关联的
+   现有CVE可以考虑。
+
+4. 漏洞不得同时提交给Google或Lyft运营的其他奖励计划。
+
+奖励由Envoy开源安全团队和Google根据具体情况自行决定，并将依据
+上述标准进行设定。如果同一漏洞被多位独立研究者同时报告，或者该
+漏洞已由Envoy开源安全团队在保密状态下跟踪处理，我们会尽力公平地
+在报告者间分配奖金。
+
+## 威胁模型
+
+基本威胁模型与Envoy的开源安全姿态相一致。为了在该计划初期提供
+受约束的攻击表面，我们增加了一些临时限制。我们排除了以下来源的
+任何威胁：
+
+- 不可信的控制平面。
+- 如访问日志、外部授权等运行时服务。
+- 不可信的上游源。
+- DoS攻击，除非另有规定。
+- 除HTTP连接管理器网络过滤器和HTTP路由器过滤器之外的所有过滤器。
+- 管理控制台；在执行环境中已被禁用。
+
+我们还明确排除了对Envoy进程的任何本地攻击（例如，通过本地进程、
+Shell等）。所有攻击必须通过端口10000上的网络数据平面发起。此外，
+内核和Docker漏洞不在这个威胁模型范围内。
+
+将来随着我们增强计划执行环境的复杂度，我们可能会放宽一些这些限制。
+
+## 执行环境
+
+我们提供了Docker镜像，这些镜像是本计划的参考环境：
+
+- [envoyproxy/envoy-google-vrp](https://hub.docker.com/r/envoyproxy/envoy-google-vrp/tags/)
+  镜像是基于Envoy点版本发布的。只有
+  在提交漏洞时的最新点版本才有资格参加本计划。VRP计划首个可用
+  的点版本是1.15.0 Envoy发布。
+
+- [envoyproxy/envoy-google-vrp-dev](https://hub.docker.com/r/envoyproxy/envoy-google-vrp-dev/tags/)
+  镜像是基于Envoy主分支构建的。
+  只有提交漏洞时最近5天内的构建版本才有资格参加本计划。在提交
+  时，这些构建不应受到任何已公开披露漏洞的影响。
+
+当通过docker run命令启动这些镜像时，可以访问两个Envoy进程：
+
+- 边缘Envoy监听10000端口（HTTPS）。它的静态配置根据Envoy的边缘加
+  固原则设定。它设置了三种路由规则（依次为）：
+
+    1. `/content/*`：路由至原始Envoy服务器。
+    
+    2. `/*`：返回403（禁止访问）。
+
+- 原始Envoy作为边缘Envoy的上游。它的静态配置只包含直接响应，
+  实质上作为一个HTTP原始服务器。它有两个路由规则（依次为）：
+
+    1. `/blockedz`：返回200 `hidden treasure`。除非有符合条件的漏洞，
+       否则边缘Envoy服务器的10000端口不应该收到这个回应。
+
+    2. `/*`：返回200 `normal`。
+
+当运行Docker镜像时，应该提供以下命令行选项：
+
+- `-m 3g` 以确保内存被限制在3GB。执行环境至少应提供这么多内存。
+  每个Envoy进程都有一个过载管理器配置，限制内存使用不超过1GB。
+
+- `-e ENVOY_EDGE_EXTRA_ARGS="<...>"` 用于提供边缘Envoy的额外CLI
+  参数。这个参数需要设置，但其值可以为空。
+
+- `-e ENVOY_ORIGIN_EXTRA_ARGS="<...>"` 用于提供原始Envoy的额外CLI
+  参数。这个参数需要设置，但其值可以为空。
+
+## 目标
+
+以下类别的故障模式将通过在10000端口上的请求来证实漏洞存在：
+
+- 死亡查询(Query-of-death)：导致Envoy进程立即发生段错误(segfault)
+  或中止的请求。
+- 内存耗尽(OOM)：导致边缘Envoy进程发生内存耗尽的请求。造成这种
+  情况的连接和流总数不得超过100（即排除了通过连接/流的暴力DoS攻
+  击）。
+- 路由规则绕过：能够访问隐藏宝藏(hidden treasure)的请求。
+- TLS证书泄露：能够获取边缘Envoy的`serverkey.pem`证书的请求。
+- 远程代码执行：通过网络数据平面获取的任何root shell。
+- 根据OSS Envoy安全团队的判断，足够有趣的漏洞即使不符合上述类
+  别，但很可能属于高危或严重漏洞的类别。
+
+## 使用Docker镜像
+
+要在本地端口10000启动边缘Envoy的基本命令如下：
+
+```
+docker run -m 3g -p 10000:10000 --name envoy-google-vrp \
+  -e ENVOY_EDGE_EXTRA_ARGS="" \
+  -e ENVOY_ORIGIN_EXTRA_ARGS="" \
+  envoyproxy/envoy-google-vrp-dev:latest
+```
+
+在进行调试时，可能需要额外的参数，例如获取跟踪日志，或使用wireshark和gdb时：
+
+```
+docker run -m 3g -p 10000:10000 --name envoy-google-vrp \
+  -e ENVOY_EDGE_EXTRA_ARGS="-l trace" \
+  -e ENVOY_ORIGIN_EXTRA_ARGS="-l trace" \
+  --cap-add SYS_PTRACE --cap-add NET_RAW --cap-add NET_ADMIN \
+  envoyproxy/envoy-google-vrp-dev:latest
+```
+
+如果需要在Docker容器中获取一个shell，可以使用：
+
+```
+docker exec -it envoy-google-vrp /bin/bash
+```
+
+Docker镜像中包括了gdb、strace、tshark等工具（欢迎通过提交PR更新[Docker构建文件](https://github.com/envoyproxy/envoy/blob/v1.28.0//ci/Dockerfile-envoy-google-vrp)来提供其他工具的建议）。
+
+## 重建Docker镜像
+
+为了研究目的，能够自己重新生成Docker基础镜像是非常有帮助的。要在不依赖CI的情况下进行这一操作，请跟随[ci/docker_rebuild_google-vrp.sh](https://github.com/envoyproxy/envoy/blob/v1.28.0/ci/docker_rebuild_google-vrp.sh)文件顶部的指引。这一操作流程的一个示例如下：
+
+```
+bazel build //source/exe:envoy-static
+./ci/docker_rebuild_google-vrp.sh bazel-bin/source/exe/envoy-static
+docker run -m 3g -p 10000:10000 --name envoy-google-vrp \
+  -e ENVOY_EDGE_EXTRA_ARGS="" \
+  -e ENVOY_ORIGIN_EXTRA_ARGS="" \
+  envoy-google-vrp:local
+```
