@@ -10,7 +10,7 @@ DisableComments: false
 
 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
-Envoy 官网介绍文档的中文翻译(安全)
+Envoy 官网介绍文档的中文翻译(安全):TLS、JWT、外部授权、基于角色访问控制、威胁模型、扩展安全、外部依赖、漏洞奖励计划
 <!--more-->
 
 # TLS
