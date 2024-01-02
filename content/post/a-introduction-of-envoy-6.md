@@ -38,7 +38,7 @@ Envoy的架构设计使得可以采用不同的配置管理方式。部署中所
 尽管方法简单，但使用静态配置和优雅的热重启，仍可以创建相对复杂的
 部署环境。
 
-## EDS（端点发现服务）
+## EDS(端点发现服务)
 
 [Endpoint Discovery Service (EDS) API ](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/service_discovery#arch-overview-service-discovery-types-eds)
 为Envoy提供了一种更高级的机制，用以发现上游集群的成员。在
@@ -46,7 +46,7 @@ Envoy的架构设计使得可以采用不同的配置管理方式。部署中所
 应中的记录最大数量等），并能够利用更多的信息进行负载均衡和路由（
 如金丝雀状态、区域信息等）。
 
-## CDS（集群发现服务）
+## CDS(集群发现服务)
 
 [Cluster Discovery Service (CDS) API](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/upstream/cluster_manager/cds#config-cluster-manager-cds)
 为Envoy提供了一种机制，使其可以在路由过程中发现用到的上游
@@ -107,7 +107,7 @@ HTTP路由部署场景。
 使得各类扩展配置（比如HTTP过滤器配置）能够与监听器配置分离地进行提供。
 这对于那些更适宜独立于主控制平面构建的系统非常有用，例如Web应用防火墙（WAF）、故障测试等场景。
 
-## 聚合xDS（“ADS”）
+## 聚合xDS(ADS)
 
 EDS、CDS等每个都是一个独立的服务，它们拥有不同的REST/gRPC服务名，如StreamListeners、StreamSecrets。
 对于那些需要强制控制不同类型资源到达Envoy的顺序的用户，可以使用聚合xDS，这是一个单一的gRPC服务，
@@ -138,3 +138,32 @@ Envoy在启动时的初始化过程相当复杂。本节将概述这一过程的
 - 在完成所有步骤之后，监听器开始接受新的连接。此流程确保在热重启期间，新的进程在新连接被处理之前完全启动，而旧进程开始关闭。  
 
 初始化设计的一个关键原则是，Envoy始终会在initial_fetch_timeout内完成初始化，并尽量在管理服务器可用性的限制下获取完整的xDS配置。
+
+# 排空
+
+在几种不同的情况下，Envoy会尝试优雅地释放连接。例如，在服务器关闭期间，可以阻止现有请求并设置监听器停止接受新连接，以减少服务器关闭时打开的连接数量。排空行为由服务器选项以及各个监听器配置共同定义。
+
+优雅关闭会在以下几种情况发生：
+
+- 服务器进行[热重启](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/operations/hot_restart#arch-overview-hot-restart)时。
+- 服务器通过 [drain_listeners?graceful](https://www.envoyproxy.io/docs/envoy/v1.28.0/operations/admin#operations-admin-interface-drain) 的管理端点开始优雅地关闭序列时。
+- 服务器已经通过 [healthcheck/fail](https://www.envoyproxy.io/docs/envoy/v1.28.0/operations/admin#operations-admin-interface-healthcheck-fail) 的管理端点进行手动健康检查并失败时。有关更多信息，请参阅[健康检查过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/health_checking#arch-overview-health-checking-filter)体系结构概述。
+- 监听器正在通过[LDS](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/operations/dynamic_configuration#arch-overview-dynamic-config-lds)进行修改或移除时。
+
+默认情况下，Envoy服务器会在服务器关闭时立即关闭监听器。要在服务器关闭之前的一段时间内排空监听器，请在关闭服务器之前使用[drain_listeners](https://www.envoyproxy.io/docs/envoy/v1.28.0/operations/admin#operations-admin-interface-drain)。监听器将直接停止，没有任何优雅的排空行为，并且立即停止接受新连接。
+
+要在关闭监听器之前添加一个优雅的排空期，请使用查询参数[drain_listeners?graceful](https://www.envoyproxy.io/docs/envoy/v1.28.0/operations/admin#operations-admin-interface-drain)。默认情况下，Envoy会在一段时间内阻止请求（由`--drain-time-s`确定），但会继续接受新连接，直到排空超时。请求阻止的行为由排空管理器确定。
+
+请注意，虽然排空是每个监听器的概念，但它必须在网络过滤器级别上得到支持。目前，唯一支持优雅排空的过滤器是Redis、Mongo、Thrift（如果启用了`envoy.reloadable_features.thrift_connection_draining`运行时功能）和[HTTP连接管理器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_conn_man/http_conn_man#config-http-conn-man)。
+
+默认情况下，[HTTP连接管理器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_conn_man/http_conn_man#config-http-conn-man)过滤器会将 "Connection: close" 添加到HTTP1请求中，发送HTTP2 GOAWAY，并在请求完成时终止连接（在延迟关闭期间之后）。
+
+每个[配置的监听器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/listeners/listeners#arch-overview-listeners)都有一个drain_type设置，用于控制何时进行排空。当前支持的值有：
+
+default
+
+Envoy将在上述三种情况（管理健康检查失败、热重启和LDS更新/删除）下对监听器进行排空。这是默认设置。
+
+modify_only
+
+Envoy将仅在上述第二种和第三种情况（热重启和LDS更新/删除）下对监听器进行排空。如果Envoy托管了入口和出口监听器，则此设置很有用。在尝试进行受控关闭时，将modify_only设置为出口监听器可能很有用，以便它们仅在修改期间进行排空，同时依靠入口监听器的排空来进行完整的服务器排空。
