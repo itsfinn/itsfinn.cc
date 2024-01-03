@@ -158,12 +158,51 @@ Envoy在启动时的初始化过程相当复杂。本节将概述这一过程的
 
 默认情况下，[HTTP连接管理器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_conn_man/http_conn_man#config-http-conn-man)过滤器会将 "Connection: close" 添加到HTTP1请求中，发送HTTP2 GOAWAY，并在请求完成时终止连接（在延迟关闭期间之后）。
 
-每个[配置的监听器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/listeners/listeners#arch-overview-listeners)都有一个drain_type设置，用于控制何时进行排空。当前支持的值有：
+每个[配置的监听器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/listeners/listeners#arch-overview-listeners)都有一个[drain_type](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/listener/v3/listener.proto#envoy-v3-api-enum-config-listener-v3-listener-draintype)设置，用于控制何时进行排空。当前支持的值有：
 
-default
+- default
 
-Envoy将在上述三种情况（管理健康检查失败、热重启和LDS更新/删除）下对监听器进行排空。这是默认设置。
+  Envoy将在上述三种情况（管理健康检查失败、热重启和LDS更新/删除）下对监听器进行排空。这是默认设置。
 
-modify_only
+- modify_only
 
-Envoy将仅在上述第二种和第三种情况（热重启和LDS更新/删除）下对监听器进行排空。如果Envoy托管了入口和出口监听器，则此设置很有用。在尝试进行受控关闭时，将modify_only设置为出口监听器可能很有用，以便它们仅在修改期间进行排空，同时依靠入口监听器的排空来进行完整的服务器排空。
+  Envoy将仅在上述第二种和第三种情况（热重启和LDS更新/删除）下对监听器进行排空。如果Envoy托管了入口和出口监听器，则此设置很有用。在尝试进行受控关闭时，将*modify_only*设置为出口监听器可能很有用，以便它们仅在修改期间进行排空，同时依靠入口监听器的排空来进行完整的服务器排空。
+
+# 运行时配置
+
+Envoy 支持“运行时”配置（也称为“功能标志(feature flags)”）。[运行时配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/operations/runtime#config-runtime)可用于修改各种服务器设置，而无需重新启动 Envoy。可用的运行时设置取决于服务器的配置方式。长期固定的运行时配置在相关部分的[配置指南](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/configuration#config)中进行了记录。
+
+运行时保护措施还用作禁用新行为或风险更改的机制，这些更改通常不会受到配置保护。此类更改往往会引入一个临时的运行时保护措施，可用于禁用新行为/代码路径。这些运行时保护措施的名称将与相应的更改说明一起包含在发行说明中。
+
+由于运行时保护措施的这种用途，一些部署可能会发现设置动态（文件系统、RTDS等）运行时配置很有用，作为一种安全措施，可以快速禁用新行为，而无需回退到较旧的 Envoy 版本或使用一组新的静态运行时标志重新部署它。
+
+请参阅“运行时[配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/operations/runtime#config-runtime)”以及[贡献指南](https://github.com/envoyproxy/envoy/blob/main/CONTRIBUTING.md#runtime-guarding)以获取更多信息。
+
+# 热重启
+
+易于操作是Envoy的主要目标之一。除了健壮的统计数据和本地管理界面外，Envoy还具有“热”或“实时”重启自身的功能。这意味着Envoy可以在完全排空过程中不中断现有连接，完全重新加载自身（包括代码和配置）。热重启功能具有以下一般架构：
+
+- 两个活动进程通过Unix域套接字使用基本RPC协议相互通信。所有计数器都从旧进程通过Unix域发送到新进程，而除那些标记为`NeverImport`的以外，所有测量值都进行传输。热重启完成后，从旧进程传输的测量值将被清理，但像 [server.hot_restart_generation statistic](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/observability/statistics#server-statistics)这样的特殊测量值将被保留。
+- 新进程在请求旧进程的监听套接字副本之前，会完全初始化自己（加载配置、执行初始服务发现和健康检查阶段等）。新进程开始监听，然后告诉旧进程开始排空。
+- 在排空阶段，旧进程尝试优雅地关闭现有连接。如何做到这一点取决于配置的过滤器。排空时间可以通过`--drain-time-s`选项进行配置，随着时间的推移，排空过程会变得更加激进。
+- 在排空序列之后，新的Envoy进程告诉旧的Envoy进程关闭自身。这个时间可以通过`--parent-shutdown-time-s`选项进行配置。
+- Envoy的热重启支持设计得即使新旧Envoy进程在不同的容器内运行，它也能正确工作。进程之间的通信仅通过Unix域套接字进行。
+- 在源代码分发中包含一个用Python编写的示例重新启动器/父进程。这个父进程可以与标准进程控制工具（如monit/runit/etc）一起使用。
+
+Envoy的默认命令行选项假定在给定主机上仅运行一组Envoy进程：一个活动的Envoy服务器进程，以及一个如上所述将退出的Envoy服务器排空进程。可以使用`--base-id`或`--use-dynamic-base-id`选项来允许多个不同配置的Envoy在同一主机上运行并独立进行热重启。
+
+> **注意**
+> 
+> 目前，在热重启期间不支持更新监听器的[socket_options](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/listener/v3/listener.proto#envoy-v3-api-field-config-listener-v3-listener-socket-options)。将使用旧进程的套接字选项。如果需要更新套接字选项，请执行完全重启或执行基于LDS的监听器更新。
+
+> **注意**
+> 
+> Windows上不支持此功能。
+
+### Socket 处理
+
+默认情况下，Envoy 在 Linux 上使用 [reuse_port](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/listener/v3/listener.proto#envoy-v3-api-field-config-listener-v3-listener-enable-reuse-port) 套接字以获得更好的性能。此功能在热重启期间工作正常，因为 Envoy 通过工作器索引将每个套接字传递给新进程。因此，在排空进程的接受队列中不会丢弃任何连接。
+
+> **注意**
+>
+> 在热重启期间发生并发更改的罕见情况下，如果并发量增加，则不会丢弃任何连接。但是，如果并发量减少，旧进程工作器中的接受队列中可能会丢弃一些连接。
