@@ -10,10 +10,12 @@ DisableComments: false
 
 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
-Envoy 官网介绍文档的中文翻译(其他特性): 本地限速、全局限速、带宽限速、脚本扩展、IP透传、压缩库
+Envoy 官网介绍文档的中文翻译(其他特性: 本地限速、全局限速、带宽限速、脚本扩展、IP透传、压缩库;其他协议: gRPC、MongoDB、DynamoDB、Redis、Postgres)
 <!--more-->
 
-# 本地限流
+# 其他特性
+
+## 本地限流
 
 Envoy 支持对 L4 连接进行本地（非分布式）限流，通过
 [本地限流监听器过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/listener_filters/local_rate_limit_filter#config-listener-filters-local-rate-limit)
@@ -25,7 +27,7 @@ Envoy 还支持通过 [HTTP 本地限流过滤器](https://www.envoyproxy.io/doc
 
 最后，Envoy 还支持全局限流。本地限流可以与全局限流结合使用，以减少对全局限流服务的负载。
 
-# 全局限流
+## 全局限流
 
 虽然分布式[断路器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/circuit_breaking#arch-overview-circuit-break)
 在控制分布式系统中的吞吐量方面通常非常有效，
@@ -43,7 +45,7 @@ Envoy 提供了两种全局限流实现：
 2. 基于配额的，带有定期负载报告，允许在多个 Envoy 实例之间公平地共享全局限流。
    这种实现适用于大型 Envoy 部署，其中每秒请求负载很高，并且可能无法在所有 Envoy 实例之间均匀平衡。
 
-## 每个连接或每个 HTTP 请求的限流
+### 每个连接或每个 HTTP 请求的限流
 
 Envoy 直接与全局 gRPC 限流服务集成。
 虽然任何实现定义的 RPC/IDL 协议的服务都可以使用，
@@ -65,7 +67,7 @@ Envoy 直接与全局 gRPC 限流服务集成。
 例如，本地令牌桶限流可以吸收可能淹没全局限流服务的非常大的负载突发。
 因此，限流分为两个阶段进行。初始粗粒度限制由令牌桶限制执行，然后由细粒度全局限制完成工作。
 
-## 基于配额的限流
+### 基于配额的限流
 
 目前还没有开源的限流服务参考实现。限流配额扩展目前可用于 Google Cloud Rate Limit Service。
 
@@ -75,18 +77,18 @@ Envoy 直接与全局 gRPC 限流服务集成。
 
 限流配额服务[配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/other_features/rate_limit#config-rate-limit-quota-service)。
 
-# 带宽限速
+## 带宽限速
 
 Envoy 支持通过 HTTP 带宽限制过滤器对 HTTP 请求和响应进行本地（非分布式）带宽限制。
 这可以在监听器级别或更具体的级别（例如：虚拟主机或路由级别）全局激活。
 
-# 脚本
+## 脚本
 
 Envoy 支持 Lua 脚本作为专用 HTTP 过滤器的一部分。
 
-# IP透传
+## IP透传
 
-## 什么是IP透传
+### 什么是IP透传
 
 作为一个代理，Envoy是一个IP端点：它有自己的IP地址，与任何下游请求的IP地址不同。
 因此，当Envoy建立与上游主机的连接时，该连接的IP地址将与任何代理连接的IP地址不同。
@@ -107,7 +109,7 @@ Envoy还支持用于检测原始IP地址的[扩展](https://www.envoyproxy.io/do
 [自定义头扩展](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/http/original_ip_detection/custom_header/v3/custom_header.proto#envoy-v3-api-msg-extensions-http-original-ip-detection-custom-header-v3-customheaderconfig)
 和[xff扩展](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/http/original_ip_detection/xff/v3/xff.proto#envoy-v3-api-msg-extensions-http-original-ip-detection-xff-v3-xffconfig)。
 
-## HTTP Headers
+### HTTP Headers
 
 HTTP headers可以通过[x-forwarded-for](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_conn_man/headers#config-http-conn-man-headers-x-forwarded-for)
 头携带请求的原始IP地址。
@@ -123,7 +125,7 @@ HTTP头方法有一些缺点：
 
 - 它需要仔细配置。
 
-## 代理协议  
+### 代理协议  
   
 [HAProxy Proxy Protocol](http://www.haproxy.org/download/1.9/doc/proxy-protocol.txt)
 定义了一种协议，用于在主TCP流之前通过TCP通信传输连接的元数据。
@@ -167,7 +169,7 @@ clusters:
 
 - 它需要上游主机支持。
 
-## 原始源监听器过滤器
+### 原始源监听器过滤器
 
 在受控的部署中，使用原始源监听器过滤器可以将下游远程地址复制到上游连接上。没有将元数据添加到上游请求或流中。相反，上游连接本身将以下游远程地址作为其源地址建立。此过滤器将与任何上游协议或主机一起工作。然而，它需要相当复杂的配置，并且由于路由约束，可能不支持所有部署。
 
@@ -178,7 +180,7 @@ clusters:
 - 由于连接池的限制，它可能会引入轻微的性能下降。
 - 不支持Windows。
 
-## 原始源HTTP过滤器
+### 原始源HTTP过滤器
 
 在受控的部署中，可以使用
 [原始源HTTP过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/original_src_filter#config-http-filters-original-src)
@@ -198,9 +200,9 @@ clusters:
 >
 > 此功能不支持Windows。
 
-# 压缩库
+## 压缩库
 
-## 底层实现
+### 底层实现
 
 目前，Envoy使用zlib、brotli和zstd作为压缩库。
 
@@ -212,3 +214,51 @@ clusters:
 > 可以将Envoy构建为使用[zlib-ng](https://github.com/zlib-ng/zlib-ng)而不是常规[zlib](http://zlib.net/)。
 > 用于构建zlib-ng的相关构建选项可以在[这里](https://github.com/envoyproxy/envoy/blob/v1.28.0/bazel/foreign_cc/BUILD)评估。
 > 目前，此选项仅在Linux上可用。
+
+# 其他协议
+
+## gRPC
+
+gRPC
+
+gRPC是由Google开发的RPC框架。它使用协议缓冲区作为底层序列化/IDL格式。在传输层，它使用HTTP/2或更高版本进行请求/响应复用。Envoy在传输层和应用程序层都为gRPC提供了第一流的支持：
+
+- gRPC使用  trailer 来传递请求状态。Envoy是少数几个正确支持  trailer 的HTTP代理之一，因此也是少数几个能够传输gRPC请求和响应的代理之一。
+
+- 对于某些语言，gRPC的运行时相对不成熟。请参阅[以下概述](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/other_protocols/grpc#arch-overview-grpc-bridging)，了解有助于将gRPC引入更多语言的过滤器。
+
+- gRPC-Web由一个[过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/grpc_json_transcoder_filter#config-http-filters-grpc-json-transcoder)支持，该过滤器允许gRPC-Web客户端通过HTTP/1.1向Envoy发送请求，并将其代理到gRPC服务器。它正在积极开发中，预计将成为gRPC[桥接过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/grpc_http1_bridge_filter#config-http-filters-grpc-bridge)的继任者。
+
+- gRPC-JSON转码器由一个[过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/grpc_web_filter#config-http-filters-grpc-web)支持，该过滤器允许RESTful JSON API客户端通过HTTP向Envoy发送请求，并将其代理到gRPC服务。
+
+### gRPC桥接
+
+Envoy支持多个gRPC桥接：
+
+- [grpc_http1_bridge 过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/grpc_http1_bridge_filter#config-http-filters-grpc-bridge)
+  允许gRPC请求通过HTTP/1.1发送到Envoy。Envoy然后将请求翻译为HTTP/2或HTTP/3，以便传输到目标服务器。响应被翻译回HTTP/1.1。安装后，桥接过滤器将收集每个RPC的统计数据以及全局HTTP统计数据的数组。
+
+- [grpc_http1_reverse_bridge 过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/grpc_http1_reverse_bridge_filter#config-http-filters-grpc-http1-reverse-bridge)允许将gRPC请求发送到Envoy，并在发送到上游时将其转换为HTTP/1.1。响应在发送到下游时被转换回gRPC。此过滤器还可以选择性地管理gRPC帧头，使得上游无需了解gRPC。
+
+- [connect_grpc_bridge 过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/connect_grpc_bridge_filter#config-http-filters-connect-grpc-bridge)允许将Buf Connect请求发送到Envoy。Envoy然后将请求翻译为gRPC以发送到上游。响应被转换回Buf Connect协议以发送回下游。需要时，HTTP/1.1请求将升级为HTTP/2或HTTP/3。
+
+### gRPC服务
+
+除了在数据平面使用gRPC外，Envoy还将其用于控制平面([从管理服务器获取配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/overview/overview#config-overview))以及过滤器(例如[限速](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/rate_limit_filter#config-http-filters-rate-limit)或授权检查)。我们将其称为gRPC服务。
+
+在指定gRPC服务时，需要指定使用
+[Envoy gRPC客户端](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/grpc_service.proto#envoy-v3-api-field-config-core-v3-grpcservice-envoy-grpc)
+或[Google C++ gRPC客户端](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/grpc_service.proto#envoy-v3-api-field-config-core-v3-grpcservice-google-grpc)。
+我们在下面讨论了这种选择的权衡。
+
+Envoy gRPC客户端是gRPC的极简自定义实现，利用了Envoy的HTTP/2或HTTP/3上游连接管理。服务作为常规的Envoy[集群](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/cluster_manager#arch-overview-cluster-manager)进行指定，具有常规的
+[超时处理、重试](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/http_connection_management#arch-overview-http-conn-man)、
+端点[发现](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/operations/dynamic_configuration#arch-overview-dynamic-config-eds)/[负载均衡/故障转移](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/overview#arch-overview-load-balancing)/负载报告、
+[断路器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/circuit_breaking#arch-overview-circuit-break)、
+[健康检查](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/health_checking#arch-overview-health-checking)、
+[离群检测](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/outlier#arch-overview-outlier-detection)。
+它们共享与Envoy数据平面相同的[连接池](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/connection_pooling#arch-overview-conn-pool)机制。同样，集群统计信息可用于gRPC服务。由于客户端是最小的，因此不包括高级gRPC功能，例如[OAuth2](https://oauth.net/2/)或[gRPC-LB](https://grpc.io/blog/loadbalancing)查找。
+
+Google C++ gRPC客户端基于Google在[https://github.com/grpc/grpc](https://github.com/grpc/grpc)上提供的gRPC参考实现。它提供了在Envoy gRPC客户端中缺少的高级gRPC功能。Google C++ gRPC客户端执行自己的负载均衡、重试、超时、端点管理等，与Envoy的集群管理无关。Google C++ gRPC客户端还支持自定义身份验证插件。
+
+建议在大多数情况下使用Envoy gRPC客户端，而不需要Google C++ gRPC客户端中的高级功能。这提供了配置和监控的简单性。如果Envoy gRPC客户端缺少必要的功能，则应使用Google C++ gRPC客户端。
