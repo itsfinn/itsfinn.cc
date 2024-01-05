@@ -10,7 +10,11 @@ DisableComments: false
 
 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
-Envoy 官网介绍文档的中文翻译(其他特性: 本地限速、全局限速、带宽限速、脚本扩展、IP透传、压缩库;其他协议: gRPC、MongoDB、DynamoDB、Redis、Postgres)
+Envoy 官网介绍文档的中文翻译(其他特性、其他协议)
+
+- 其他特性: 本地限速、全局限速、带宽限速、脚本扩展、IP透传、压缩库
+
+- 其他协议: gRPC、MongoDB、DynamoDB、Redis、Postgres)
 <!--more-->
 
 # 其他特性
@@ -367,3 +371,78 @@ Envoy代理支持通过`cluster slots`命令响应中的IP地址和主机名标�
 | max_upstream_unknown_connections_reached | Counter   | 在达到连接池的max_upstream_unknown_connections限制后，无法创建到未知主机的上游连接的次数。经过重定向后，不创建上游到未知主机的连接。                              |
 | upstream_cx_drained                      | Counter   | 在关闭之前，排空所有活跃请求的上游连接的总数。排空所有活跃请求的上游连接。                                                                          |
 | upstream_commands.upstream_rq_time       | Histogram   | 所有类型请求的上游请求时间的直方图。所有类型请求的上游请求时间直方图。                                                                          |
+
+通过设置 [enable_command_stats](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/redis_proxy/v3/redis_proxy.proto#envoy-v3-api-field-extensions-filters-network-redis-proxy-v3-redisproxy-connpoolsettings-enable-command-stats) 开启每个集群的命令统计：
+
+| 名称                                | 类型      | 描述                                                                  |
+| ----------------------------------- | --------- | --------------------------------------------------------------------- |
+| upstream_commands.[command].success | Counter   | 特定 Redis 命令成功请求的总数                   |
+| upstream_commands.[command].failure | Counter   | 特定 Redis 命令失败或取消的请求总数          |
+| upstream_commands.[command].total   | Counter   | 特定 Redis 命令的请求总数（成功和失败的总和） |
+| upstream_commands.[command].latency | Histogram | 特定 Redis 命令请求的延迟 |
+
+### 事务
+
+Envoy 支持事务 (MULTI)。其使用方式与常规 Redis 相同：您使用 MULTI 开始事务，然后使用 EXEC 执行它。在事务中，只支持 Envoy 支持的命令（见下文）和单键命令，即不支持 MGET 和 MSET。DISCARD 命令也支持。
+
+当在 Redis 集群模式下工作时，Envoy 会将事务中的所有命令转发给处理事务中的第一个基于键的命令的节点。用户有责任确保事务中的所有键都映射到相同的哈希槽，因为命令不会被重定向。
+
+### 支持的命令
+
+在协议层面，支持管道。在可能的情况下使用管道以获得最佳性能。
+
+在命令级别，Envoy 只支持能够可靠地哈希到服务器的命令。AUTH 和 PING 是唯一的例外。如果下游配置了密码，则 AUTH 将由 Envoy 在本地处理，并且在身份验证成功之前，不会处理其他命令。如果为集群配置了上游服务器身份验证密码，Envoy 将与上游服务器连接时透明地发出 AUTH 命令。Envoy 会立即对 PING 做出响应，发送 PONG。不允许 PING 的参数。所有其他受支持的命令必须包含一个键。受支持的命令在功能上与原始 Redis 命令相同，除非在故障场景中可能有所不同。
+
+每个命令的使用参考官方 [Redis 命令参考](https://redis.io/commands)
+
+[支持的命令](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/other_protocols/redis#supported-commands)列表
+
+### 故障模式
+
+如果 Redis 抛出错误，我们将该错误作为命令的响应传递。Envoy 将 Redis 带有错误数据类型的响应视为正常响应，并将其传递给调用者。
+
+Envoy 还可以在响应客户端时生成自己的错误。
+
+Envoy 错误对照表
+
+| 错误 | 含义 |
+| --- | ---|
+| no upstream host | 在为该键选择的环位置上，环哈希负载均衡器没有可用的健康主机。 |
+| upstream failure | 后端未在超时时间内响应或关闭了连接。 |
+| invalid request | 由于数据类型或长度，命令被命令拆分器的第一阶段拒绝。 |
+| unsupported command | 该命令未被 Envoy 识别，因此无法提供服务，因为它无法被哈希到后端服务器。 |
+| finished with n errors | 分片命令（例如 DEL）将返回收到的错误总数，如果有收到任何错误。 |
+| upstream protocol error | 分片命令收到了意外的数据类型或后端响应不符合 Redis 协议。 |
+| wrong number of arguments for command | 某些命令在 Envoy 中检查参数的数量是否正确。 |
+| NOAUTH Authentication required. | 该命令被拒绝，因为设置了下游认证密码，而客户端未成功通过身份验证。 |
+| ERR invalid password | 由于密码无效，认证命令失败。 |
+| ERR Client sent AUTH, but no password is set | 收到了认证命令，但没有配置下游认证密码。 |
+
+在 MGET 的情况下，无法获取的每个单独的键都会生成一个错误响应。例如，如果我们获取五个键，其中两个键的后端超时，我们将在每个值的位置上获得一个错误响应。
+
+```shell
+$ redis-cli MGET a b c d e
+1) "alpha"
+2) "bravo"
+3) (error) upstream failure
+4) (error) upstream failure
+5) "echo"
+```
+
+## Postgres
+
+Envoy 支持一个网络级别的 Postgres 嗅探过滤器，以增加网络可观察性。通过使用 Postgres 代理，Envoy 能够解码 Postgres 前端/后端协议，并从解码的信息中收集统计数据。
+
+Postgres 过滤器的主要目标是捕获运行时统计信息，而不会对 Postgres 上游服务器产生任何影响或生成任何负载，它对上游服务器是透明的。该过滤器目前提供以下功能：
+
+- 解码非 SSL 流量，忽略 SSL 流量。
+- 解码会话信息。
+- 在转发上游之前对传入非 SSL 流量进行编码。
+- 捕获事务信息，包括提交和回滚。
+- 公开不同类型的语句（INSERT、DELETE、UPDATE 等）的计数器。这些计数器根据解码的后端 CommandComplete 消息进行更新，而不是通过解码客户端发送的 SQL 语句。
+- 计算前端、后端和未知消息的数量。
+- 识别错误和通知后端响应。
+
+Postgres 过滤器解决了 Postgres 部署中的一个显著问题：收集这些信息要么给服务器带来额外的负载；要么需要从服务器拉取查询元数据的查询，有时需要外部组件或扩展。此过滤器提供宝贵的可观察性信息，而不会影响上游 Postgres 服务器的性能或要求安装任何软件。
+
+Postgres 代理过滤器[配置参考](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/postgres_proxy_filter#config-network-filters-postgres-proxy)。
