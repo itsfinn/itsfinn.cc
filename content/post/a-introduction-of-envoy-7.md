@@ -262,3 +262,108 @@ Envoy gRPC客户端是gRPC的极简自定义实现，利用了Envoy的HTTP/2或H
 Google C++ gRPC客户端基于Google在[https://github.com/grpc/grpc](https://github.com/grpc/grpc)上提供的gRPC参考实现。它提供了在Envoy gRPC客户端中缺少的高级gRPC功能。Google C++ gRPC客户端执行自己的负载均衡、重试、超时、端点管理等，与Envoy的集群管理无关。Google C++ gRPC客户端还支持自定义身份验证插件。
 
 建议在大多数情况下使用Envoy gRPC客户端，而不需要Google C++ gRPC客户端中的高级功能。这提供了配置和监控的简单性。如果Envoy gRPC客户端缺少必要的功能，则应使用Google C++ gRPC客户端。
+
+## MongoDB
+
+Envoy支持一个网络级别的MongoDB嗅探过滤器，具有以下功能：
+
+- MongoDB有线格式BSON解析器。
+
+详细的MongoDB查询/操作统计信息，包括时间戳和路由集群的散列/多获取计数(including timings and scatter/multi-get counts for routed clusters.)。
+
+- 查询日志记录。
+
+- 通过$comment查询参数的每个调用方的统计信息。
+
+- 故障注入。
+
+MongoDB过滤器是Envoy可扩展性和核心抽象的一个很好的例子，可用于在所有应用程序和MongoDB数据库之间进行过滤。它提供了一个宝贵的数据源，与应用程序平台和使用的特定MongoDB驱动程序无关。
+
+MongoDB 代理过滤器[配置指南](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/mongo_proxy_filter#config-network-filters-mongo-proxy)
+
+## DynamoDB
+
+Envoy支持一个HTTP级别的 DynamoDB 嗅探过滤器，具有以下功能：
+
+- DynamoDB API请求/响应解析器。
+
+- DynamoDB每个操作/每个表/每个分区的统计信息以及操作统计信息。
+
+- 从响应JSON解析的4xx响应的失败类型统计信息，例如ProvisionedThroughputExceededException。
+
+- 批处理操作的部分失败统计信息。
+
+DynamoDB过滤器是Envoy在HTTP层上的可扩展性和核心抽象的一个很好的例子，可用于过滤所有应用程序与DynamoDB的通信。它提供了一个宝贵的数据源，与应用程序平台和使用的特定AWS SDK无关。
+
+DynamoDB 过滤器[配置](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/dynamodb_filter#config-http-filters-dynamo)
+
+## Redis
+
+Envoy可以作为Redis代理，在集群的实例之间划分命令。在这种模式下，Envoy的目标是在可用性和分区容忍度之间保持一致性。这是将Envoy与Redis Cluster进行比较的关键点。Envoy被设计为最佳努力缓存，这意味着它不会尝试协调不一致的数据或保持集群成员的全局一致性视图。它还支持根据不同工作负载的访问模式、驱逐或隔离要求，将命令从不同的工作负载路由到不同的上游集群。
+
+Redis项目提供了关于分区与Redis相关的全面参考。请参阅“[分区：如何将数据拆分到多个Redis实例中](https://redis.io/topics/partitioning)”。
+
+以下是Envoy Redis的一些功能：
+
+- [Redis协议](https://redis.io/topics/protocol)编解码器。
+- 基于哈希的分区。
+- Redis事务支持。
+- Ketama分布。
+- 详细的命令统计信息。
+- 主动和被动健康检查。
+- 哈希标签。
+- 前缀路由。
+- 独立的下游客户端和上游服务器身份验证。
+- 所有请求或仅写请求的请求镜像。
+- 控制[读取请求的路由](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/redis_proxy/v3/redis_proxy.proto#envoy-v3-api-field-extensions-filters-network-redis-proxy-v3-redisproxy-connpoolsettings-read-policy)。仅与Redis Cluster一起工作。
+
+计划中的未来增强功能：
+
+- 其他时间统计信息。
+- 断路器。
+- 对碎片化命令进行请求折叠。
+- 复制。
+- 内置重试。
+- 跟踪。
+
+### 配置
+
+有关过滤器配置的详细信息，请参阅Redis代理过滤器[配置参考](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/redis_proxy_filter#config-network-filters-redis-proxy)。
+
+相应的集群定义应配置为[环哈希负载均衡](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-lb-policy)。
+
+如果需要[主动健康检查](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/health_checking#arch-overview-health-checking)，
+集群应配置为
+[自定义健康检查](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/health_check.proto#envoy-v3-api-field-config-core-v3-healthcheck-custom-health-check)，
+并将其配置为
+[Redis健康检查器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/upstream/health_checkers/redis#config-health-checkers-redis)。
+
+如果需要被动健康检查，还应配置[异常检测](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/outlier#arch-overview-outlier-detection)。
+
+对于被动健康检查，连接超时、命令超时和连接关闭映射为5xx。来自Redis的所有其他响应都被计为成功。
+
+### Redis集群支持
+
+Envoy提供了对Redis集群的支持。
+
+当使用Envoy作为Redis集群的边车代理时，服务可以使用任何语言的非集群Redis客户端连接到代理，就像它是一个单节点Redis实例一样。Envoy代理将跟踪集群拓扑并根据规范将命令发送到正确的Redis节点。还可以向Envoy代理添加高级功能，例如从副本读取，而不是在每种语言中更新Redis客户端。
+
+Envoy代理通过向集群中的随机节点发送定期的集群插槽命令来跟踪集群拓扑，并维护以下信息：
+
+- 已知节点的列表。
+
+- 每个分片的初级节点。
+
+- 进入或离开集群的节点。
+
+Envoy代理支持通过`cluster slots`命令响应中的IP地址和主机名标识节点。在无法解析主机名的情况下，Envoy将定期重试解析所有节点，直到成功。无法解析副本只会跳过该副本。另一方面，如果设置了[enable_redirection](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/redis_proxy/v3/redis_proxy.proto#envoy-v3-api-field-extensions-filters-network-redis-proxy-v3-redisproxy-connpoolsettings-enable-redirection)，并且收到包含主机名的MOVED或ASK响应，Envoy不会自动进行DNS查找，而是将错误原样传递给客户端。要使Envoy进行DNS查找并遵循重定向，您需要在连接池设置中配置DNS缓存选项[dns_cache_config](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/filters/network/redis_proxy/v3/redis_proxy.proto#envoy-v3-api-field-extensions-filters-network-redis-proxy-v3-redisproxy-connpoolsettings-dns-cache-config)。有关如何启用重定向的DNS查找的配置示例，请参阅过滤器[配置参考](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/redis_proxy_filter#config-network-filters-redis-proxy)。
+
+有关拓扑配置的详细信息，请参阅Redis Cluster [v3 API参考](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/clusters/redis/v3/redis_cluster.proto#envoy-v3-api-msg-extensions-clusters-redis-v3-redisclusterconfig)。
+
+每个Redis集群都有自己的额外统计树，其根在 cluster.<name>.redis_cluster. 下，具有以下统计信息：
+
+| 名称                                     | 类型      | 描述                                                                                                                                                                       |
+| ---------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| max_upstream_unknown_connections_reached | Counter   | 在达到连接池的max_upstream_unknown_connections限制后，无法创建到未知主机的上游连接的次数。经过重定向后，不创建上游到未知主机的连接。                              |
+| upstream_cx_drained                      | Counter   | 在关闭之前，排空所有活跃请求的上游连接的总数。排空所有活跃请求的上游连接。                                                                          |
+| upstream_commands.upstream_rq_time       | Histogram   | 所有类型请求的上游请求时间的直方图。所有类型请求的上游请求时间直方图。                                                                          |
