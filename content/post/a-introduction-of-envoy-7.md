@@ -15,6 +15,8 @@ Envoy 官网介绍文档的中文翻译(其他特性、其他协议)
 - 其他特性: 本地限速、全局限速、带宽限速、脚本扩展、IP透传、压缩库
 
 - 其他协议: gRPC、MongoDB、DynamoDB、Redis、Postgres)
+
+- 高级：在过滤期间共享数据、属性、普通匹配
 <!--more-->
 
 # 其他特性
@@ -446,3 +448,119 @@ Postgres 过滤器的主要目标是捕获运行时统计信息，而不会对 P
 Postgres 过滤器解决了 Postgres 部署中的一个显著问题：收集这些信息要么给服务器带来额外的负载；要么需要从服务器拉取查询元数据的查询，有时需要外部组件或扩展。此过滤器提供宝贵的可观察性信息，而不会影响上游 Postgres 服务器的性能或要求安装任何软件。
 
 Postgres 代理过滤器[配置参考](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/network_filters/postgres_proxy_filter#config-network-filters-postgres-proxy)。
+
+# 高级
+
+## 在过滤期间共享数据
+
+Envoy 提供了以下机制，用于在过滤器之间以及与其他核心子系统（例如访问日志）之间的传输传输配置、元数据和每个请求/连接的状态。
+
+### 静态状态
+
+静态状态是在配置加载时指定的任何不可变状态（例如通过 xDS）。静态状态有三种类型：
+
+#### 元数据
+
+Envoy 配置的几个部分（例如监听器、路由、集群）包含一个元数据，其中可以编码任意键值对。常见的模式是使用反向 DNS 格式的过滤器名称作为键，并将过滤器特定的配置元数据编码为值。这种元数据是不可变的，并且在所有请求/连接之间共享。此类配置元数据通常在引导时间或作为 xDS 的一部分提供。例如，HTTP 路由中的加权集群使用元数据来指示对应于加权集群的端点的标签。另一个例子是，子集负载均衡器使用路由条目中的元数据来选择集群中适当的端点。
+
+#### 类型化元数据
+
+[元数据](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/core/v3/base.proto#envoy-v3-api-msg-config-core-v3-metadata)本身是无类型的。在对其执行操作之前，调用者通常将其转换为类型化的类对象。当执行多次转换时（例如，对于每个请求流或连接），转换成本变得不可忽略。类型化元数据通过允许过滤器注册特定键的一次性转换逻辑来解决这个问题。传入的配置元数据（通过 xDS）在配置加载时转换为类对象。过滤器然后可以在运行时获得类型化的元数据变体（按请求或连接），从而消除了在请求/连接处理期间过滤器需要反复将 `ProtobufWkt::Struct` 转换为某些内部对象的需要。
+
+例如，一个过滤器希望在 `ClusterInfo` 中的 `xxx.service.policy` 键的元数据上有一个方便的包装类。它可以注册一个继承自 `ClusterTypedMetadataFactory` 的 `ServicePolicyFactory` 工厂。该工厂将 `ProtobufWkt::Struct` 转换为 `ServicePolicy` 类实例（继承自 `FilterState::Object`）。当创建 Cluster 时，将创建并缓存关联的 `ServicePolicy` 实例。请注意，类型化元数据不是新来源的元数据。它是从配置中指定的元数据中获取的。实现了 `serializeAsProto` 方法的 `FilterState::Object` 可以配置在访问记录器中记录它。
+
+#### HTTP 路由特定过滤器配置
+
+在 HTTP 路由中，typed_per_filter_config 允许 HTTP 过滤器除了全局过滤器配置外，还具有特定于虚拟主机/路由的配置。此配置被转换并嵌入到路由表中。HTTP 过滤器实现可以将路由特定的过滤器配置视为对全局配置的替换或增强。例如，HTTP 故障过滤器使用此技术提供按路由的故障配置。
+
+`typed_per_filter_config` 是一个 `map<string, google.protobuf.Any>`。连接管理器会遍历此映射，并调用 filter 工厂接口 `createRouteSpecificFilterConfigTyped` 来解析/验证结构值，并将其转换为与路由本身一起存储的有类型类对象。HTTP 过滤器可以在请求处理期间查询特定于路由的过滤器配置。
+
+### 动态状态
+
+动态状态是针对每个网络连接或每个HTTP流生成的。如果生成状态的过滤器需要，动态状态可以是可变的。
+
+`Envoy::Network::Connection` 和 `Envoy::Http::Filter` 提供了一个 `StreamInfo` 对象，该对象包含有关当前 TCP 连接和 HTTP 流（即 HTTP 请求/响应对）的信息。`StreamInfo` 包含一组固定的属性，作为类定义的一部分（例如，HTTP 协议、请求的服务器名称等）。此外，它还提供了一个机制来将类型化的对象存储在地图中（`map<string, FilterState::Object>`）。存储在每个过滤器中的状态可以是只写一次（不可变）或可多次写入（可变）。
+
+请参阅[众所周知的动态元数据](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/advanced/well_known_dynamic_metadata#well-known-dynamic-metadata)和[众所周知的过滤器状态](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/advanced/well_known_filter_state#well-known-filter-state)，以获取动态元数据和过滤器状态对象的参考列表。
+
+#### 过滤器状态共享
+
+过滤器状态对象与父流的生命周期绑定。然而，如果在创建期间将一个下游对象标记为与上游连接共享，该对象将与上游连接的过滤器状态共享，其生命周期将扩展到原始流之外。任何上游 TCP 或 HTTP 过滤器都可以访问共享的对象。上游传输套接字也可以读取共享的对象并自定义上游传输的创建。例如，内部上游传输套接字将共享对象的引用复制到内部连接的下游过滤器状态中。
+
+与上游共享的过滤器状态对象还会影响连接池的决策，如果它们实现了哈希接口。每当添加可共享的可哈希对象时，就会为每个不同的哈希值创建一个上游连接，以确保这些对象不会被同一上游连接的后续下游请求覆盖。例如，自定义 HTTP 过滤器可以从特殊头部的值创建一个可共享的可哈希对象。在这种情况下，对于每个不同的特殊头部值，都会创建一个单独的上游连接，以确保具有不同头部值的两个请求不会共享同一个上游连接。相同的程序对每个单独的可哈希对象适用，为对象的值的不同组合创建上游连接的组合矩阵。
+
+## 属性
+
+属性是指由 Envoy 在请求和连接处理过程中提供的上下文相关属性。它们通过一个由点分隔的路径进行命名（例如，`request.path`），具有固定的类型（例如，`string`或`int`），并根据上下文可能出现或缺失。属性通过以下方式暴露：
+
+- 通过[RBAC过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/security/rbac_filter#arch-overview-rbac)在CEL运行时中暴露属性。
+- 通过get_property ABI方法在Wasm扩展中暴露属性。
+
+属性值类型限制为：
+
+- `string`：UTF-8字符串
+- `bytes`：字节缓冲区
+- `int`：64位有符号整数
+- `uint`：64位无符号整数
+- `bool`：布尔值
+- `list`：值列表
+- `map`：具有字符串键的关联数组
+- `timestamp`：时间戳，如[Timestamp](https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#timestamp)指定
+- `duration`：持续时间，如[Duration](https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#duration)指定
+- Protocol buffer message types（协议缓冲区消息类型）
+
+CEL为抽象类型提供了标准辅助函数，例如对`timestamp`值的`getMonth`。请注意，整数字面量（例如，7）的类型为int，这与uint（例如，7u）不同，并且不自动进行算术转换（要明确转换，请使用uint(7)）。
+
+Wasm扩展接收的属性值是一个根据属性类型进行序列化的缓冲区。字符串和字节按原样传递，整数直接作为64位传递，时间戳和持续时间近似为纳秒，结构化值被递归地转换为一对序列。
+
+### 请求属性
+
+以下请求属性通常在初始请求处理时可用，这使得它们适合用于RBAC策略。
+
+`request.*` 属性仅在http过滤器中可用。
+
+| 属性 | 类型 | 描述 |
+| :--: | :--: | :--: |
+| request.path | string | URL的路径部分 |
+| request.url_path | string | 不带查询字符串的URL路径部分 |
+| request.host | string | URL的主机部分 |
+| request.scheme | string | URL的方案部分，例如：“http” |
+| request.method | string | 请求方法，例如：“GET” |
+| request.headers | map<string, string> | 按头名称小写排序的所有请求头的映射 |
+| request.referer | string | Referer请求头 |
+| request.useragent | string | User-Agent请求头 |
+| request.time | timestamp | 接收第一字节的时间 |
+| request.id | string | 与x-request-id头值对应的请求ID |
+| request.protocol | string | 请求协议（“HTTP/1.0”，“HTTP/1.1”，“HTTP/2”或“HTTP/3”） |
+| request.query | string | URL的查询部分，格式为“name1=value1&name2=value2” 。|
+
+在请求完成时，`request.headers`关联数组中的Header值是使用逗号连接的多个值。
+
+一旦请求完成，将提供其他属性：
+
+| 属性               | 类型     | 描述                                    |
+| :----------------: | :------: | :-------------------------------------: |
+| request.duration   | duration | 请求的总持续时间                         |
+| request.size       | int      | 请求体的尺寸。如果可用，则使用内容长度头。|
+| request.total_size | int      | 请求的总大小，包括大致未压缩的头部大小    |
+
+### 响应属性
+
+响应属性仅在请求完成后可用。
+
+`response.*` 属性仅在http过滤器中可用。
+
+| 属性 | 类型 | 描述 |
+| :--: | :--: | :--: |
+| response.code | int | 响应的HTTP状态码 |
+| response.code_details | string | 内部响应代码详细信息（可能会有所更改） |
+| response.flags | int | 以位向量编码的除标准响应码之外的响应附加详细信息 |
+| response.grpc_status | int | 响应的gRPC状态码 |
+| response.headers | map<string, string> | 按头名称小写索引的所有响应头 |
+| response.trailers | map<string, string> | 按尾部名称小写索引的所有响应尾部 |
+| response.size | int | 响应体的尺寸 |
+| response.total_size | int | 包括大致未压缩的头部和尾部大小的响应的总大小 |
+
+### 连接属性
+
+一旦下游连接建立，以下属性即可用（这也适用于HTTP请求，使其适合RBAC）：
