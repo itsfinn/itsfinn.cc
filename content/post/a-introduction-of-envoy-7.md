@@ -1,6 +1,6 @@
 ---
 title: "Envoy 介绍之(七)"
-date: 2023-01-04T12:00:00+08:00
+date: 2024-01-04T12:00:00+08:00
 isCJKLanguage: true
 Description: "Envoy 官网介绍文档的中文翻译"
 Tags: ["envoy", "introduction", "介绍"]
@@ -128,5 +128,87 @@ HTTP头方法有一些缺点：
 [HAProxy Proxy Protocol](http://www.haproxy.org/download/1.9/doc/proxy-protocol.txt)
 定义了一种协议，用于在主TCP流之前通过TCP通信传输连接的元数据。
 这些元数据包括源IP地址。
-Envoy代理支持使用代理协议过滤器来利用这些信息，这有助于恢复下游远程地址，并将其传播到x-forwarded-for头部。
-此外，它还可以与Original Src监听器过滤器结合使用。最后，Envoy代理支持使用代理协议传输套接字生成此头部信息。
+Envoy代理支持使用
+[代理协议过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/listeners/listener_filters/proxy_protocol#config-listener-filters-proxy-protocol)
+来利用这些信息，这有助于恢复下游远程地址，并将其传播到
+[x-forwarded-for](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_conn_man/headers#config-http-conn-man-headers-x-forwarded-for)头部。
+此外，它还可以与
+[Original Src监听器过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/other_features/ip_transparency#arch-overview-ip-transparency-original-src-listener)
+结合使用。最后，Envoy代理支持使用
+[代理协议传输套接字](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/extensions/transport_sockets/proxy_protocol/v3/upstream_proxy_protocol.proto#extension-envoy-transport-sockets-upstream-proxy-protocol)
+生成此头部信息。
+
+这是一个设置套接字的示例配置：
+
+```yaml
+clusters:
+- name: service1
+  connect_timeout: 0.25s
+  type: strict_dns
+  lb_policy: round_robin
+  transport_socket:
+    name: envoy.transport_sockets.upstream_proxy_protocol
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.transport_sockets.proxy_protocol.v3.ProxyProtocolUpstreamTransport
+      config:
+        version: V1
+      transport_socket:
+        name: envoy.transport_sockets.raw_buffer
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.raw_buffer.v3.RawBuffer
+  ...
+```
+
+如果你计划将此套接字与HTTP连接管理器结合使用，需要考虑一些因素。由于代理协议是基于连接的协议，因此下游客户端之间不会重用上游连接。连接到Envoy的每个客户端都会与上游服务器建立新的连接。在建立连接之初，下游客户端信息会在发送任何其他数据之前转发给上游（注：这包括在TLS握手发生之前）。如果可能的话，应优先使用x-forwarded-for标头，因为使用此方法，Envoy能够重用上游连接。由于Envoy对下游和上游连接的处理是分开的，因此最好对上游连接强制执行短暂的空闲超时，因为当下游连接关闭时，Envoy不会自动关闭相应的上游连接。
+
+代理协议的一些缺点：
+
+- 它只支持TCP协议。
+
+- 它需要上游主机支持。
+
+## 原始源监听器过滤器
+
+在受控的部署中，使用原始源监听器过滤器可以将下游远程地址复制到上游连接上。没有将元数据添加到上游请求或流中。相反，上游连接本身将以下游远程地址作为其源地址建立。此过滤器将与任何上游协议或主机一起工作。然而，它需要相当复杂的配置，并且由于路由约束，可能不支持所有部署。
+
+原始源过滤器的一些缺点：
+
+- 它要求Envoy能够访问下游远程地址。
+- 它的配置相对复杂。
+- 由于连接池的限制，它可能会引入轻微的性能下降。
+- 不支持Windows。
+
+## 原始源HTTP过滤器
+
+在受控的部署中，可以使用
+[原始源HTTP过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_filters/original_src_filter#config-http-filters-original-src)
+将下游远程地址复制到上游连接上。此过滤器与
+[原始源监听器过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/other_features/ip_transparency#arch-overview-ip-transparency-original-src-listener)
+非常相似。主要区别在于，它可以从HTTP头中推断出原始源地址，这对于单个下游连接承载来自不同原始源地址的多个HTTP请求的情况非常重要。前端代理转发到边车代理的部署就是这种情况的示例。
+
+此过滤器将与任何上游HTTP主机一起工作。然而，它需要相当复杂的配置，并且由于路由约束，可能不支持所有部署。
+
+原始源过滤器的一些缺点：
+
+- 它要求Envoy经过适当配置，以便从[x-forwarded-for](https://www.envoyproxy.io/docs/envoy/v1.28.0/configuration/http/http_conn_man/headers#config-http-conn-man-headers-x-forwarded-for)标头中提取下游远程地址。
+- 它的配置相对复杂。
+- 由于连接池的限制，它可能会引入轻微的性能下降。
+
+> **注意**
+>
+> 此功能不支持Windows。
+
+# 压缩库
+
+## 底层实现
+
+目前，Envoy使用zlib、brotli和zstd作为压缩库。
+
+> **注意**
+>
+> [zlib-ng](https://github.com/zlib-ng/zlib-ng)是一个分支，托管了几个包含新优化的第三方贡献。
+> 这些优化被认为对[提高压缩性能](https://github.com/envoyproxy/envoy/issues/8448#issuecomment-667152013)很有用。
+> 通过使用`--define zlib=ng` Bazel 选项，
+> 可以将Envoy构建为使用[zlib-ng](https://github.com/zlib-ng/zlib-ng)而不是常规[zlib](http://zlib.net/)。
+> 用于构建zlib-ng的相关构建选项可以在[这里](https://github.com/envoyproxy/envoy/blob/v1.28.0/bazel/foreign_cc/BUILD)评估。
+> 目前，此选项仅在Linux上可用。
