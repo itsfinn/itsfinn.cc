@@ -380,8 +380,111 @@ virtual FilterHeadersStatus decodeHeaders(RequestHeaderMap& headers, bool end_st
 virtual FilterDataStatus decodeData(Buffer::Instance& data, bool end_stream) PURE;
 virtual FilterTrailersStatus decodeTrailers(RequestTrailerMap& trailers) PURE;
 ```
-```
-virtual FilterHeadersStatus decodeHeaders(RequestHeaderMap& headers, bool end_stream) PURE;
-virtual FilterDataStatus decodeData(Buffer::Instance& data, bool end_stream) PURE;
-virtual FilterTrailersStatus decodeTrailers(RequestTrailerMap& trailers) PURE;
-```
+
+与在连接缓冲区和事件上操作不同，HTTP过滤器遵循HTTP请求的生命周期，例如，`decodeHeaders()`方法接受HTTP头部作为参数，而不是字节缓冲区。返回的 `FilterStatus` 与网络和监听器过滤器一样，提供了管理过滤器链控制流的能力。
+
+当HTTP/2编解码器提供HTTP请求的头部时，这些头部首先传递给 CustomFilter 中的 `decodeHeaders()` 方法。如果返回的 
+ `FilterHeadersStatus` 为 `Continue`，HCM然后将头部（可能由CustomFilter修改）传递给路由器过滤器。
+
+解码器和编解码器过滤器在请求路径上执行。编码器和编解码器过滤器在响应路径上执行，方向相反。考虑以下示例过滤器链：
+
+![](https://www.envoyproxy.io/docs/envoy/v1.28.0/_images/lor-http.svg)
+
+请求路径看起来是:
+
+![](https://www.envoyproxy.io/docs/envoy/v1.28.0/_images/lor-http-decode.svg)
+
+响应路径看起来是:
+
+![](https://www.envoyproxy.io/docs/envoy/v1.28.0/_images/lor-http-encode.svg)
+
+当在[路由](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/http/http_routing#arch-overview-http-routing)过滤器上调用`decodeHeaders()`时，路由选择将最终确定并选择一个集群。在HTTP过滤器链执行开始时，HCM从其`RouteConfiguration`中选择一条路由。这被称为缓存的路由。过滤器可以修改头部并要求HCM清除路由缓存并重新评估路由选择。过滤器还可以通过`setRoute`回调直接设置此缓存的路由选择。当路由器过滤器被调用时，路由被确定。所选路由的配置将指向上游集群名称。路由器过滤器然后要求`ClusterManager`为集群创建一个HTTP连接池。这涉及到下一部分中讨论的负载均衡和连接池。
+
+![](https://www.envoyproxy.io/docs/envoy/v1.28.0/_images/lor-route-config.svg)
+
+由此产生的HTTP连接池用于在路由器中构建一个`UpstreamRequest`对象，该对象封装了上游HTTP请求的HTTP编码和解码回调方法。一旦在HTTP连接池中的连接上分配了一个流，请求头部将通过调用`UpstreamRequest::encodeHeaders`转发到上游端点。
+
+路由器过滤器负责从HTTP连接池中分配的流上的上游请求生命周期管理的所有方面。它还负责请求超时、重试和亲和性。
+
+路由器过滤器还负责创建和运行上游HTTP过滤器链 *<arch_overview_http_filters>*。
+默认情况下，上游过滤器将在路由器过滤器收到头部后立即开始运行，但是C++过滤器可以暂停，直到需要检查上游流或连接时才建立上游连接。
+默认情况下，上游过滤器链通过集群配置进行配置，因此例如，被遮蔽的请求可以为主集群和遮蔽的集群设置单独的上游过滤器链。
+另外，由于上游过滤器链位于路由器过滤器上游，因此每个重试尝试都会运行一次，
+允许每个重试进行头部操作并包含有关上游流和连接的信息。
+与下游过滤器不同，上游过滤器不能更改路由。
+
+## 7. 负载均衡
+
+每个集群都有一个[负载均衡器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/overview#arch-overview-load-balancing)，
+当新请求到达时，它会选择一个端点。
+Envoy支持各种负载均衡算法，例如加权轮询、Maglev、最少负载、随机。
+负载均衡器通过组合静态引导配置、DNS、动态xDS（CDS和EDS发现服务）以及主动/被动健康检查来获取其有效分配。
+有关Envoy中负载均衡如何工作的更多详细信息，请参阅[负载均衡文档](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/load_balancing/overview#arch-overview-load-balancing)。
+
+一旦选择了端点，将从该端点的[连接池](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/connection_pooling#arch-overview-conn-pool), 查找用于转发请求的连接。
+如果没有到主机的连接，或者所有连接都已达到其最大并发流限制，
+则将建立新的连接并将其放置在连接池中，除非该集群的最大连接数的断路器已跳闸。
+如果配置了连接的最大生命周期流限制并且已达到，则将在池中分配新的连接，并将受影响的HTTP/2连接排空。
+还会检查其他断路器，例如到集群的最大并发请求。请参阅
+[断路器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/circuit_breaking#arch-overview-circuit-break)
+和[连接池](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/upstream/connection_pooling#arch-overview-conn-pool)
+以获取更多详细信息。
+
+![](https://www.envoyproxy.io/docs/envoy/v1.28.0/_images/lor-lb.svg)
+
+## 8. HTTP/2编解码器编码
+
+选定的连接的HTTP/2编解码器通过单个TCP连接将请求流与任何其他流向相同上游的流进行复用。这与[HTTP/2编解码器解码](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/life_of_a_request#life-of-a-request-http2-decoding)相反。
+
+与下游HTTP/2编解码器一样，上游编解码器负责将Envoy的标准HTTP抽象，即通过单个连接进行多流复用，具有请求/响应头/正文/尾部，并将其映射到HTTP/2的具体细节，生成一系列HTTP/2帧。
+
+## 9. TLS传输套接字加密
+
+上游端点连接的TLS传输套接字对来自HTTP/2编解码器的字节进行加密，并将它们写入TCP套接字以进行上游连接。与
+[TLS传输套接字解密](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/life_of_a_request#life-of-a-request-tls-decryption)
+一样，在我们的示例中，集群配置了提供TLS传输安全的传输套接字。上游和下游传输套接字扩展具有相同的接口。
+
+![](https://www.envoyproxy.io/docs/envoy/v1.28.0/_images/lor-client.svg)
+
+## 10. 响应路径和HTTP生命周期
+
+由头部和可选的正文和尾部组成的请求被代理到上游，响应被代理到下游。
+响应按照与请求相反的顺序通过HTTP和网络过滤器。
+
+在解码器/编码器请求生命周期事件的各种回调中，HTTP过滤器将被调用，例如在转发响应尾部或流式传输请求正文时。
+同样，在请求期间，读写网络过滤器也将有其各自的回调被调用，因为数据在两个方向上继续流动。
+
+随着请求的进展，端点的异常检测状态也会得到修订。
+
+当上游响应到达其流的末尾时，即收到带有设置了end-stream的响应头部/正文或尾部时，请求完成。
+这由`outer::Filter::onUpstreamComplete()`处理。
+
+请求可能会提前终止。这可能是由于以下原因（但不限于）：
+
+- 请求超时。
+- 上游端点流重置。
+- HTTP过滤器流重置。
+- 断路器触发。
+- 上游资源不可用，例如缺少一个路由的集群。
+- 没有健康端点。
+- DoS保护。
+- HTTP协议违规。
+- 来自HCM或HTTP过滤器的本地回复。例如，速率限制HTTP过滤器返回429响应。
+
+如果发生其中任何一种情况，Envoy可能会发送一个内部生成的响应（如果上游响应头尚未发送），
+或者如果响应头已经转发到下游，则会重置流。
+有关解释这些早期流终止的更多信息，请参阅Envoy[调试常见问题解答](https://www.envoyproxy.io/docs/envoy/v1.28.0/faq/overview#faq-overview-debug)。
+
+## 11. 请求后处理
+
+一旦请求完成，流将被销毁。以下操作也会发生：
+
+- 更新请求后的[统计数据](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/observability/statistics#arch-overview-statistics)（例如计时、活动请求、升级、健康检查）。
+  然而，一些统计数据在请求处理期间会更早地更新。
+  此时，统计数据不会写入统计数据[接收器](https://www.envoyproxy.io/docs/envoy/v1.28.0/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-field-config-bootstrap-v3-bootstrap-stats-sinks)，
+  而是由主线程定期批量写入。在我们的示例中，这是一个statsd接收器。
+
+- [访问日志](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/observability/access_logging#arch-overview-access-logs)被写入访问日志[接收器](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/observability/access_logging#arch-overview-access-logs-sinks)。
+  在我们的示例中，这是一个文件访问日志。
+
+- [跟踪](https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/arch_overview/observability/tracing#arch-overview-tracing)跨度被最终确定。如果我们的示例请求被跟踪，一个描述请求持续时间和详细信息的跟踪跨度将在HCM处理请求头时由HCM创建，然后在请求后处理期间由HCM最终确定。
