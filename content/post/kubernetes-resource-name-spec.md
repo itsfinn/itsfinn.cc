@@ -15,6 +15,7 @@ Categories: ["k8s"]
 |                    |                    | ConfigMap          | 253                | 同上                                                                    |
 |                    |                    | Secret             | 253                | 同上                                                                    |
 |                    |                    | EndpointSlice      | 253                | 同上                                                                    |
+|                    |                    | Ingress            | 253                | 同上                                                                    |
 |                    | 网络策略           | NetworkPolicy      | 253                | 同上                                                                    |
 | RFC 1123 标签名    | 命名空间           | Namespace          | 63                 |                                                                         |
 | RFC 1035 标签名    | 服务               | Service            | 63                 |   `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`                                     |
@@ -51,10 +52,10 @@ Categories: ["k8s"]
 - DNS子域名多级使用 “.” 连接，每一级以字母数字开头，以字母数字结尾，“-”只能出现在每一级的中间
 
 相关资源类型：
-- Pod名称
-参考自 https://kubernetes.io/zh/docs/concepts/workloads/pods/ 当你为 Pod 对象创建清单时，要确保所指定的 Pod 名称是合法的 [DNS 子域名](https://kubernetes.io/zh/docs/concepts/overview/working-with-objects/names#dns-subdomain-names)。
+- Pod, https://kubernetes.io/zh/docs/concepts/workloads/pods/ 当你为 Pod 对象创建清单时，要确保所指定的 Pod 名称是合法的 [DNS 子域名](https://kubernetes.io/zh/docs/concepts/overview/working-with-objects/names#dns-subdomain-names)。
 - ConfigMap
 - 网络策略名称
+- Ingress (https://kubernetes.io/zh-cn/docs/concepts/services-networking/ingress/#the-ingress-resource)
 
 ## RFC 1123 标签名 【长度63】
 某些资源类型需要其名称遵循 [RFC 1123](https://tools.ietf.org/html/rfc1123
@@ -139,3 +140,4 @@ Role、ClusterRole、RoleBinding、ClusterRoleBinding
 
 1. [名字空间和 DNS](https://kubernetes.io/zh-cn/docs/concepts/overview/working-with-objects/namespaces/#namespaces-and-dns)
 2. [服务（Service）- 定义 Service](https://kubernetes.io/zh-cn/docs/concepts/services-networking/service/#defining-a-service)
+3. [Ingress 资源](https://kubernetes.io/zh-cn/docs/concepts/services-networking/ingress/#the-ingress-resource)
