@@ -16,9 +16,8 @@ Categories: ["k8s"]
 |                    |                    | Secret             | 253                | 同上                                                                    |
 |                    |                    | EndpointSlice      | 253                | 同上                                                                    |
 |                    | 网络策略           | NetworkPolicy      | 253                | 同上                                                                    |
-| RFC 1123 标签名    | 服务               | Service            | 63                 |   `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`                                     |
-|                    | 命名空间           | Namespace          | 63                 |  同上                                                                   |
-| RFC 1035 标签名    |                    |                    | 63                 |                                                                         |
+| RFC 1123 标签名    | 命名空间           | Namespace          | 63                 |                                                                         |
+| RFC 1035 标签名    | 服务               | Service            | 63                 |   `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`                                     |
 | 路径分段名称       |                    | Role               |                    |                                                                         |
 |                    |                    | RoleBinding        |                    |                                                                         |
 |                    |                    | ClusterRole        |                    |                                                                         |
@@ -66,8 +65,7 @@ Categories: ["k8s"]
 - 必须以字母数字结尾
 
 相关资源类型：
-- 服务名称
-- 命名空间名称
+- 命名空间(Namespace)
 
 ## RFC 1035 标签名【长度63】
 某些资源类型需要其名称遵循 [RFC 1035](https://tools.ietf.org/html/rfc1035) 所定义的 DNS 标签标准。也就是命名必须满足如下规则：
@@ -77,6 +75,7 @@ Categories: ["k8s"]
 - 必须以字母数字结尾
 
 相关资源类型：
+- 服务(Service)
 
 ## 路径分段名称（Path Segment Names）
 某些资源类型要求名称能被安全地用作路径中的片段。 换句话说，其名称不能是 `.`、`..`，也不可以包含 `/` 或 `%` 这些字符。
@@ -135,3 +134,8 @@ Role、ClusterRole、RoleBinding、ClusterRoleBinding
 - 只能包含小写字母、数字，以及 '-'，且'-'不能连续
 - 必须以字母数字开头
 - 必须以字母数字结尾
+
+# 参考文档
+
+1. [名字空间和 DNS](https://kubernetes.io/zh-cn/docs/concepts/overview/working-with-objects/namespaces/#namespaces-and-dns)
+2. [服务（Service）- 定义 Service](https://kubernetes.io/zh-cn/docs/concepts/services-networking/service/#defining-a-service)
