@@ -16,6 +16,7 @@ Categories: ["k8s"]
 |                    |                    | Secret             | 253                | 同上                                                                    |
 |                    |                    | EndpointSlice      | 253                | 同上                                                                    |
 |                    |                    | Ingress            | 253                | 同上                                                                    |
+|                    |                    | Gateway            | 253                | 同上                                                                    |
 |                    | 网络策略           | NetworkPolicy      | 253                | 同上                                                                    |
 | RFC 1123 标签名    | 命名空间           | Namespace          | 63                 |                                                                         |
 | RFC 1035 标签名    | 服务               | Service            | 63                 |   `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`                                     |
