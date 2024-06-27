@@ -13,6 +13,7 @@ Categories: ["k8s"]
 | ------------------ | ------------------ | ---------------------  | ------------------ | ----------------------------------------------------------------------- |
 | DNS子域名          | Pod                | Pod                    | 253                | `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`    |
 |                    |                    | ConfigMap              | 253                | 同上                                                                    |
+|                    |                    | DaemonSet              | 253                | 同上                                                                    |
 |                    |                    | Secret                 | 253                | 同上                                                                    |
 |                    |                    | EndpointSlice          | 253                | 同上                                                                    |
 |                    |                    | Ingress                | 253                | 同上                                                                    |
@@ -144,5 +145,6 @@ Role、ClusterRole、RoleBinding、ClusterRoleBinding
 # 参考文档
 
 1. [名字空间和 DNS](https://kubernetes.io/zh-cn/docs/concepts/overview/working-with-objects/namespaces/#namespaces-and-dns)
-2. [服务（Service）- 定义 Service](https://kubernetes.io/zh-cn/docs/concepts/services-networking/service/#defining-a-service)
-3. [Ingress 资源](https://kubernetes.io/zh-cn/docs/concepts/services-networking/ingress/#the-ingress-resource)
+2. [DaemonSet 必须字段](https://kubernetes.io/zh-cn/docs/concepts/workloads/controllers/daemonset/#required-fields)
+3. [服务（Service）- 定义 Service](https://kubernetes.io/zh-cn/docs/concepts/services-networking/service/#defining-a-service)
+4. [Ingress 资源](https://kubernetes.io/zh-cn/docs/concepts/services-networking/ingress/#the-ingress-resource)
