@@ -215,7 +215,59 @@ _42         // an identifier, not an integer literal
 
 ## 浮点数字面量
 
-浮点字面量是十进制或十六进制表示的浮点常量。
+浮点字面量是浮点常量的十进制或十六进制表示形式。
+
+十进制浮点文本由整数部分（十进制数字）、小数点、小数部分（十进制数字）和指数部分（e 或 E 后跟可选符号和十进制数字）组成。整数部分或小数部分之一可以省略;小数点后的一个或指数部分可以省略。指数值 exp 将尾数（整数和小数部分）缩放 10exp。
+
+十六进制浮点文本由 0x 或 0X 前缀、整数部分（十六进制数字）、基数点、小数部分（十六进制数字）和指数部分（p 或 P 后跟可选符号和十进制数字）组成。整数部分或小数部分之一可以省略;基数点也可以省略，但指数部分是必需的。
+
+（此语法与 IEEE 754-2008 §5.12.3 中给出的语法匹配。指数值 exp 将尾数（整数和小数部分）缩放 2exp [Go 1.13]。
+
+为了便于阅读，下划线字符 _ 可能出现在基本前缀之后或连续数字之间;此类下划线不会更改字面值。
+
+```float_lit         = decimal_float_lit | hex_float_lit .
+
+decimal_float_lit = decimal_digits "." [ decimal_digits ] [ decimal_exponent ] |
+                    decimal_digits decimal_exponent |
+                    "." decimal_digits [ decimal_exponent ] .
+decimal_exponent  = ( "e" | "E" ) [ "+" | "-" ] decimal_digits .
+
+hex_float_lit     = "0" ( "x" | "X" ) hex_mantissa hex_exponent .
+hex_mantissa      = [ "_" ] hex_digits "." [ hex_digits ] |
+                    [ "_" ] hex_digits |
+                    "." hex_digits .
+hex_exponent      = ( "p" | "P" ) [ "+" | "-" ] decimal_digits .
+```
+
+```
+0.
+72.40
+072.40       // == 72.40
+2.71828
+1.e+0
+6.67428e-11
+1E6
+.25
+.12345E+5
+1_5.         // == 15.0
+0.15e+0_2    // == 15.0
+
+0x1p-2       // == 0.25
+0x2.p10      // == 2048.0
+0x1.Fp+0     // == 1.9375
+0X.8p-0      // == 0.5
+0X_1FFFP-16  // == 0.1249847412109375
+0x15e-2      // == 0x15e - 2 (integer subtraction)
+
+0x.p1        // invalid: mantissa has no digits
+1p-2         // invalid: p exponent requires hexadecimal mantissa
+0x1.5e-2     // invalid: hexadecimal mantissa requires p exponent
+1_.5         // invalid: _ must separate successive digits
+1._5         // invalid: _ must separate successive digits
+1.5_e1       // invalid: _ must separate successive digits
+1.5e_1       // invalid: _ must separate successive digits
+1.5e1_       // invalid: _ must separate successive digits
+```
 
 ## 复数字面量
 
