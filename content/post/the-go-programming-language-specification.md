@@ -10,7 +10,7 @@ DisableComments: false
 
 原文地址: [The Go Programming Language Specification](https://go.dev/ref/spec)
 
-Go 官方编程语言规范中文翻译版本（Go 版本 go1.23 (2024年8月24日)）
+Go 官方编程语言规范中文翻译版本（Go 版本 go1.23 (2024年8月24日)）[翻译进度 14%]
 <!--more-->
 
 # 引言
@@ -269,11 +269,104 @@ hex_exponent      = ( "p" | "P" ) [ "+" | "-" ] decimal_digits .
 1.5e1_       // invalid: _ must separate successive digits
 ```
 
-## 复数字面量
+## 虚数字面量
+
+虚数文本表示复数常量的虚数部分。它由一个整数或浮点文本组成，后跟小写字母 i。虚数字面的值是相应的整数或浮点字面乘以虚数单位 *i* [Go 1.13]
+
+```
+imaginary_lit = (decimal_digits | int_lit | float_lit) "i" .
+```
+
+为了向后兼容，完全由十进制数字（可能还有下划线）组成的虚构文本的整数部分被视为十进制整数，即使它以前导 0 开头。
+
+```
+0i
+0123i         // == 123i for backward-compatibility
+0o123i        // == 0o123 * 1i == 83i
+0xabci        // == 0xabc * 1i == 2748i
+0.i
+2.71828i
+1.e+0i
+6.67428e-11i
+1E6i
+.25i
+.12345E+5i
+0x1p-2i       // == 0x1p-2 * 1i == 0.25i
+```
 
 ## rune字面量
 
+A rune literal represents a rune constant, an integer value identifying a Unicode code point. A rune literal is expressed as one or more characters enclosed in single quotes, as in 'x' or '\n'. Within the quotes, any character may appear except newline and unescaped single quote. A single quoted character represents the Unicode value of the character itself, while multi-character sequences beginning with a backslash encode values in various formats.
+rune 文本表示 rune 常量，即标识 Unicode 代码点的整数值。rune 文本表示为用单引号括起来的一个或多个字符，如 'x' 或 '\n'。在引号中，可以显示除换行符和未转义的单引号之外的任何字符。单引号引起来的一个字符表示字符本身的 Unicode 值，而以反斜杠开头的多字符序列以各种格式对值进行编码。
+
+最简单的形式就是单引号引起来的一个字符，由于 Go 源文本是用 UTF-8 编码的 Unicode 字符，因此多个 UTF-8 编码的字节可能表示一个整数值。例如，文本 'a' 包含一个字节，表示文本 a，Unicode U+0061，值 0x61，而 'ä' 包含两个字节 （0xc30xa4），表示文本 a-dieresis，U+00E4，值 0xe4。
+
+几个反斜杠转义允许将任意值编码为 ASCII 文本。有四种方法可以将整数值表示为数字常量：\x 后跟两个十六进制数字;\u 后跟四个十六进制数字;\U 后跟 8 个十六进制数字，一个普通的反斜杠 \ 后跟 3 个八进制数字。在每种情况下，文本的值都是相应基数中的数字表示的值。
+
+Although these representations all result in an integer, they have different valid ranges. Octal escapes must represent a value between 0 and 255 inclusive. Hexadecimal escapes satisfy this condition by construction. The escapes \u and \U represent Unicode code points so within them some values are illegal, in particular those above 0x10FFFF and surrogate halves.
+
+尽管这些表示形式都生成一个整数，但它们具有不同的有效范围。八进制转义必须表示介于 0 和 255 之间（含 0 和 255）的值。十六进制转义通过构造满足此条件。转义符 \u 和 \U 表示 Unicode 码位，因此在它们中，某些值是非法的，特别是 0x10FFFF 和代理部分上方的值。
+
+在反斜杠之后，某些单字符转义表示特殊值：
+
+```
+\a   U+0007 alert or bell
+\b   U+0008 backspace
+\f   U+000C form feed
+\n   U+000A line feed or newline
+\r   U+000D carriage return
+\t   U+0009 horizontal tab
+\v   U+000B vertical tab
+\\   U+005C backslash
+\'   U+0027 single quote  (valid escape only within rune literals)
+\"   U+0022 double quote  (valid escape only within string literals)
+```
+
+在 rune 字面量中反斜杠后面的无法识别的字符是非法的。
+
+```
+rune_lit         = "'" ( unicode_value | byte_value ) "'" .
+unicode_value    = unicode_char | little_u_value | big_u_value | escaped_char .
+byte_value       = octal_byte_value | hex_byte_value .
+octal_byte_value = `\` octal_digit octal_digit octal_digit .
+hex_byte_value   = `\` "x" hex_digit hex_digit .
+little_u_value   = `\` "u" hex_digit hex_digit hex_digit hex_digit .
+big_u_value      = `\` "U" hex_digit hex_digit hex_digit hex_digit
+                           hex_digit hex_digit hex_digit hex_digit .
+escaped_char     = `\` ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | `\` | "'" | `"` ) .
+```
+
+```
+'a'
+'ä'
+'本'
+'\t'
+'\000'
+'\007'
+'\377'
+'\x07'
+'\xff'
+'\u12e4'
+'\U00101234'
+'\''         // rune literal containing single quote character
+'aa'         // illegal: too many characters
+'\k'         // illegal: k is not recognized after a backslash
+'\xa'        // illegal: too few hexadecimal digits
+'\0'         // illegal: too few octal digits
+'\400'       // illegal: octal value over 255
+'\uDFFF'     // illegal: surrogate half
+'\U00110000' // illegal: invalid Unicode code point
+```
+
 ## 字符串字面量
+
+字符串字面量表示通过连接字符序列获得的字符串常量。有两种形式：原始字符串字面量和解释的字符串字面量。
+
+原始字符串字面量是反引号之间的字符序列，如 \`foo\` 的。 两个反引号中间可以出现除了反引号以外的任何字符。
+
+原始字符串字面量的值是两个反引号中间未解释（隐式 UTF-8 编码）字符组成的字符串; 特别注意是，反斜杠没有特殊含义，字符串可以包含换行符。
+
+
 
 # 常量
 
