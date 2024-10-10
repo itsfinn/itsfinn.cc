@@ -368,6 +368,28 @@ escaped_char     = `\` ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | `\` | "'" | `
 
 原始字符串文字中的回车符 （'\r'） 从原始字符串值中丢弃。
 
+解释的字符串文字是双引号之间的字符序列，如 "bar" 一样。在引号中，可以出现除换行符和未转义的双引号之外的任何字符。引号之间的文本构成了 字面量的值，反斜杠转义解释为 rune 字面量中的含义（除了 \' 是非法的，\" 是合法的），具有相同的限制。三位数八进制 （\nnn） 和两位十六进制 （\xnn） 转义表示结果字符串的单个字节;所有其他转义符表示单个字符的（可能是多字节的）UTF-8 编码。因此，在字符串文本中，\377 和 \xFF 表示值为 0xFF=255 的单个字节，而 ÿ、\u00FF、\U000000FF 和 \xc3\xbf 表示字符 U+00FF 的 UTF-8 编码0xc30xbf的两个字节。
+
+```
+string_lit             = raw_string_lit | interpreted_string_lit .
+raw_string_lit         = "`" { unicode_char | newline } "`" .
+interpreted_string_lit = `"` { unicode_value | byte_value } `"` .
+```
+
+```
+`abc`                // same as "abc"
+`\n
+\n`                  // same as "\\n\n\\n"
+"\n"
+"\""                 // same as `"`
+"Hello, world!\n"
+"日本語"
+"\u65e5本\U00008a9e"
+"\xff\u00FF"
+"\uD800"             // illegal: surrogate half
+"\U00110000"         // illegal: invalid Unicode code point
+```
+
 # 常量
 
 # 变量
