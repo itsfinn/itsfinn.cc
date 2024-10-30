@@ -392,6 +392,8 @@ interpreted_string_lit = `"` { unicode_value | byte_value } `"` .
 
 # 常量
 
+有布尔常量、rune 常量、整数常量、浮点常量、复数常量和字符串常量。rune 常量、整数常量、浮点常量、复数常量统称为数值常量。
+
 # 变量
 
 # 类型
