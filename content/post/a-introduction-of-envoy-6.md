@@ -10,7 +10,7 @@ DisableComments: false
 
 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
-Envoy 官网介绍文档的中文翻译(操作与配置):xDS配置Api、初始化、运行时配置、热重启、过载管理器
+Envoy 官网介绍文档的中文翻译(操作与配置):xDS配置Api、启动初始化、排空、运行时配置、热重启、过载管理器
 <!--more-->
 
 # xDS配置API概览
