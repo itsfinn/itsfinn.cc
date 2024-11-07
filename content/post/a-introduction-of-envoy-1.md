@@ -1219,3 +1219,71 @@ Envoy 动态正向代理支持的内存使用详情如下：
 上游请求和连接仍然受到其他集群熔断器（如[max_requests](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/cluster/v3/circuit_breaker.proto#envoy-v3-api-field-config-cluster-v3-circuitbreakers-thresholds-max-requests)）的限制。
 
 目前假设共享连接之间的主机数据占用的内存相对较少，与连接和请求本身相比，不值得单独控制。
+
+### 2.3.6 HTTP/3 概述
+
+
+> **警告：**
+> 虽然 HTTP/3下游支持已准备好用于生产，但仍在不断改进，可在 [area-quic](https://github.com/envoyproxy/envoy/labels/area%2Fquic) 标签中进行跟踪。
+>
+> HTTP/3上游支持对于本地控制网络来说很好，但还不适合一般互联网使用，并且缺少一些关键的延迟功能。请参阅下面的详细信息。
+
+#### HTTP/3 下游
+
+可以通过添加 [quic_options](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/udp_listener_config.proto#envoy-v3-api-field-config-listener-v3-udplistenerconfig-quic-options)、确保下游传输套接字是 [QuicDownstreamTransport](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/transport_sockets/quic/v3/quic_transport.proto#envoy-v3-api-msg-extensions-transport-sockets-quic-v3-quicdownstreamtransport) 以及将编解码器设置为 HTTP/3来启动下游 Envoy HTTP/3 支持 。
+
+> **注意:**
+> HTTP/3 尚未能完美处理热重启。
+
+
+> **提示:**
+> 有关示例配置，请参阅[下游 HTTP/3 配置](https://github.com/envoyproxy/envoy/blob/v1.28.7//configs/envoyproxy_io_proxy_http3_downstream.yaml)。
+>
+> 此示例配置包括 TCP 和 UDP 侦听器，并且 TCP 侦听器通过`alt-svc`标头宣告 HTTP/3 支持。
+>
+> 默认情况下，示例配置使用内核 UDP 支持，但**如果 Envoy 使用多个工作线程运行，则强烈建议使用BPF来提高生产性能 。**
+
+##### HTTP/3 宣告
+
+对于内部部署，如果已经明确配置了HTTP/3，则不需要宣告HTTP/3，但是对于面向互联网的部署，由于默认使用TCP，客户端（如Chrome）只有在明确宣告HTTP/3的情况下才会尝试使用HTTP/3。
+
+##### BPF 使用
+
+如果配置了多个工作线程，Envoy 将默认尝试在 Linux 上使用 BPF，但可能需要 root 权限，或者至少sudo具有权限（例如 `sudo setcap cap_bpf+ep`）。
+
+如果配置了多个工作线程并且平台不支持 BPF，或者尝试失败，Envoy 将在启动时记录警告。
+
+##### 下游统计数据
+
+建议监控一些 UDP 监听器和 QUIC 连接统计数据：
+
+- [UDP 侦听器downstream_rx_datagram_dropped](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/listeners/stats#config-listener-stats-udp)
+
+  非零表示内核的 UDP 侦听套接字的接收缓冲区不够大。在 Linux 中，可以通过在级别 设置预绑定套接字选项，通过侦听器socket_options进行配置。SO_RCVBUFSOL_SOCKET
+
+- [QUIC 连接错误代码和流重置错误代码](https://github.com/envoyproxy/envoy/blob/v1.28.7/config_http_conn_man_stats_per_listener_http3)
+
+  有关每个错误代码的含义，请参阅[quic_error_codes.h](https://github.com/google/quiche/blob/main/quiche/quic/core/quic_error_codes.h) 。
+
+#### HTTP/3 上游
+
+实现了 HTTP/3 上游支持，既支持显式 HTTP/3（用于数据中心），也支持自动 HTTP/3（用于互联网）。
+
+如果您处于受控环境中，UDP 不太可能被阻止，则可以在[http_protocol_options](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-msg-extensions-upstreams-http-v3-httpprotocoloptions)中将其配置为显式协议。
+
+对于互联网使用，通过 [http3_protocol_options](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-field-extensions-upstreams-http-v3-httpprotocoloptions-explicithttpconfig-http3-protocol-options) 
+配置 
+[auto_config](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-field-extensions-upstreams-http-v3-httpprotocoloptions-auto-config) 
+将导致 Envoy 尝试对那些通过 `alt-svc` 头部明确宣布支持 HTTP/3 的端点使用 HTTP/3。
+
+当使用带有 
+[http3_protocol_options](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-field-extensions-upstreams-http-v3-httpprotocoloptions-explicithttpconfig-http3-protocol-options) 
+的 
+[auto_config](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/upstreams/http/v3/http_protocol_options.proto#envoy-v3-api-field-extensions-upstreams-http-v3-httpprotocoloptions-auto-config) 
+时，Envoy 将尝试创建一个 QUIC 连接，然后如果 QUIC 握手在短暂的延迟后仍未完成，将启动一个 TCP 连接，并使用最先建立的连接。
+
+> **提示**
+>
+> 有关 HTTP/3 连接池的更多信息，请参见[此处](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/upstream/connection_pooling#arch-overview-http3-pooling-upstream)，包括 QUIC 将被使用的详细情况，以及当配置为可选使用 QUIC 时如何回退到 TCP。
+>
+> 可以在[此处](https://github.com/envoyproxy/envoy/blob/v1.28.7//configs/google_com_http3_upstream_proxy.yaml)找到上游 HTTP/3 配置文件的示例。
