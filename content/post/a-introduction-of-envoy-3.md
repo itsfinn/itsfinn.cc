@@ -3,12 +3,12 @@ title: "Envoy 介绍之(三)"
 date: 2023-12-26T12:00:00+08:00
 isCJKLanguage: true
 Description: "Envoy 官网介绍文档的中文翻译"
-Tags: ["envoy", "introduction", "介绍"]
+Tags: ["envoy", "introduction", "介绍", "中文文档"]
 Categories: ["envoy"]
 DisableComments: false
 ---
 
-原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
+本文档基于 v1.28, 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
 Envoy 官网介绍文档的中文翻译(上游集群部分): 聚合集群、异常检测、熔断机制、上游网络过滤器、负载报告服务、负载均衡策略
 <!--more-->
