@@ -1179,3 +1179,43 @@ HTTP POST 也可用于代理多路复用的 TCP，当中间代理不支持 CONNE
 Envoy会在HTTP隧道建立成功（即CONNECT请求成功响应收到）后，才开始将下游TCP数据流传输到上游。
 
 如果您想解封装CONNECT请求，并对解封装的有效负载进行HTTP处理，最简单的方法是使用内部侦听器。
+
+### 2.3.5 HTTP 动态转发代理
+
+通过结合 [HTTP 过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/http/http_filters/dynamic_forward_proxy_filter#config-http-filters-dynamic-forward-proxy)
+和[自定义集群](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/clusters/dynamic_forward_proxy/v3/cluster.proto#envoy-v3-api-msg-extensions-clusters-dynamic-forward-proxy-v3-clusterconfig)，Envoy 支持 HTTP 动态转发代理。
+
+这意味着 Envoy 可以在事先了解所有已配置的 DNS 地址的情况下执行 HTTP 代理的角色，同时仍保留 Envoy 的绝大多数优势，包括异步 DNS 解析。
+
+实现方式如下：
+
+- 如果目标 DNS 主机尚未在缓存中，则使用动态转发代理 HTTP 过滤器来暂停请求。
+- Envoy 将开始异步解析 DNS 地址，在解析完成后恢复之前被暂停的请求。
+- 任何未来的请求都不会被阻止，因为 DNS 地址已在缓存中。解析过程的工作方式类似于[逻辑 DNS](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/upstream/service_discovery#arch-overview-service-discovery-types-logical-dns) 服务发现类型，在任何给定时间都会记住单个目标地址。
+- 所有已知主机都存储在动态转发代理集群中，以便它们可以显示在 [admin 输出](https://www.envoyproxy.io/docs/envoy/v1.28.7/operations/admin#operations-admin-interface)中。
+- 特殊的负载均衡器将在转发过程中根据 HTTP `host`/`authorityHeader` 选择使用正确的主机。
+- 一段时间内未使用的主机将受到生存时间策略(Time to Live, TTL) 的约束，并被清除。(注： 默认5m, 参考[extensions.common.dynamic_forward_proxy.v3.DnsCacheConfig](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/common/dynamic_forward_proxy/v3/dns_cache.proto#envoy-v3-api-msg-extensions-common-dynamic-forward-proxy-v3-dnscacheconfig))
+- 当上游集群配置了 TLS 上下文时，Envoy 将自动对解析的主机名执行 SAN 验证并通过 SNI 指定主机名
+
+上述实现细节意味着在稳定状态下，Envoy 可以转发大量 HTTP 代理流量，而所有 DNS 解析都在后台异步进行。
+
+此外，所有其他 Envoy 过滤器和扩展都可以与动态转发代理支持结合使用，包括身份验证、RBAC、速率限制等。
+
+
+> **提示：**
+> 有关更多配置信息，请参阅[HTTP 过滤器配置文档](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/http/http_filters/dynamic_forward_proxy_filter#config-http-filters-dynamic-forward-proxy)。
+
+#### 内存使用情况详细信息
+
+Envoy 动态正向代理支持的内存使用详情如下：
+
+- 每个解析的主机/端口对都使用固定数量的服务器全局内存，并在所有工作线程之间共享。
+- 地址更改使用读/写锁内联执行，不需要为主机对象重新分配内存。
+- 主机地址在没有活动连接引用它们后，会通过 TTL 机制清楚并回收使用的内存。
+- 可以通过设置max_hosts字段来限制DNS缓存可以存储的主机数量。
+- 可以通过集群的max_pending_requests熔断器来限制等待DNS缓存加载主机的请求数量。
+- 对于上游长连接，即使连接仍处于打开状态，长连接拥有的底层逻辑主机也可能因为 TTL 机制到期而被移除。
+
+上游请求和连接仍然受到其他集群熔断器（如[max_requests](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/cluster/v3/circuit_breaker.proto#envoy-v3-api-field-config-cluster-v3-circuitbreakers-thresholds-max-requests)）的限制。
+
+目前假设共享连接之间的主机数据占用的内存相对较少，与连接和请求本身相比，不值得单独控制。
