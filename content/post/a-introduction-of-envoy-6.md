@@ -3,12 +3,12 @@ title: "Envoy 介绍之(六)"
 date: 2023-12-29T12:00:00+08:00
 isCJKLanguage: true
 Description: "Envoy 官网介绍文档的中文翻译"
-Tags: ["envoy", "introduction", "介绍"]
+Tags: ["envoy", "introduction", "介绍", "中文文档"]
 Categories: ["envoy"]
 DisableComments: false
 ---
 
-原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
+本文档基于 v1.28, 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro
 
 Envoy 官网介绍文档的中文翻译(操作与配置):xDS配置Api、启动初始化、排空、运行时配置、热重启、过载管理器
 <!--more-->
