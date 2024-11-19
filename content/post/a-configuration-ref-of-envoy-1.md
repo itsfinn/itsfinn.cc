@@ -564,8 +564,8 @@ xDS 管理服务器将根据 gRPC 和(或) REST 服务的要求实现以下端�
 
 > **POST /envoy.service.endpoint.v3.EndpointDiscoveryService/StreamEndpoints**
 
-请参阅
-[cds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/cluster/v3/cds.proto)
+请参阅 
+[eds.proto](https://github.com/envoyproxy/envoy/blob/v1.28.7/api/envoy/service/endpoint/v3/eds.proto)
 了解服务定义。当 Envoy 以此作为客户端时，
 
 ```yaml
@@ -576,3 +576,263 @@ eds_config:
     - envoy_grpc:
         cluster_name: some_xds_cluster
 ```
+
+在 
+[Cluster](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-msg-config-cluster-v3-cluster)
+配置的
+[eds_cluster_config](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-eds-cluster-config)
+字段中设置。
+
+> **POST /envoy.service.listener.v3.ListenerDiscoveryService/StreamListeners**
+
+请参阅
+[lds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/listener/v3/lds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+  lds_config:
+    resource_api_version: V3
+    api_config_source:
+      api_type: GRPC
+      transport_api_version: V3
+      grpc_services:
+      - envoy_grpc:
+          cluster_name: xds_cluster
+```
+
+在 [Bootstrap](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-msg-config-bootstrap-v3-bootstrap)
+配置的
+[dynamic_resources](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-field-config-bootstrap-v3-bootstrap-dynamic-resources)
+中设置。
+
+> **POST /envoy.service.route.v3.RouteDiscoveryService/StreamRoutes**
+
+请参阅 
+[rds.proto](https://github.com/envoyproxy/envoy/blob/v1.28.7/api/envoy/service/route/v3/rds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+route_config_name: some_route_name
+config_source:
+  api_config_source:
+    api_type: GRPC
+    grpc_services:
+    - envoy_grpc:
+        cluster_name: some_xds_cluster
+```
+
+在
+[HttpConnectionManager](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-msg-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager)
+配置的
+[rds](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-rds)
+字段中设置。
+
+> **POST /envoy.service.route.v3.ScopedRoutesDiscoveryService/StreamScopedRoutes**
+
+请参阅 
+[srds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/route/v3/srds.proto)了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+name: some_scoped_route_name
+scoped_rds:
+  config_source:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+      - envoy_grpc:
+          cluster_name: some_xds_cluster
+```
+了解服务定义。
+
+在 
+[HttpConnectionManager](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-msg-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager)
+配置的
+[scoped_routes](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-scoped-routes)
+字段中设置。
+
+> **POST /envoy.service.secret.v3.SecretDiscoveryService/StreamSecrets**
+
+请参阅
+[sds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/secret/v3/sds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+                  token_secret:
+                    name: token
+                    sds_config:
+                      api_config_source:
+                        api_type: GRPC
+                        grpc_services:
+                        - envoy_grpc:
+                            cluster_name: sds_server_uds
+                  hmac_secret:
+                    name: hmac
+```
+
+在
+[SdsSecretConfig](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/tls/v3/secret.proto#envoy-v3-api-msg-extensions-transport-sockets-tls-v3-sdssecretconfig)
+消息中设置。此消息用于
+[CommonTlsContext](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/tls/v3/tls.proto#envoy-v3-api-msg-extensions-transport-sockets-tls-v3-commontlscontext)
+等各种地方。
+
+> **POST /envoy.service.runtime.v3.RuntimeDiscoveryService/StreamRuntime**
+
+请参阅
+[rtds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/runtime/v3/rtds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+name: some_runtime_layer_name
+config_source:
+  api_config_source:
+    api_type: GRPC
+    grpc_services:
+    - envoy_grpc:
+        cluster_name: some_xds_cluster
+```
+
+在[rtds_layer](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-field-config-bootstrap-v3-runtimelayer-rtds-layer)
+字段内设置。
+
+## REST 端点
+
+> **POST /v3/discovery:clusters**
+
+请参阅 
+[cds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/cluster/v3/cds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+cds_config:
+  api_config_source:
+    api_type: REST
+    cluster_names: [some_xds_cluster]
+```
+
+在 
+[Bootstrap](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-msg-config-bootstrap-v3-bootstrap)
+配置的 
+[dynamic_resources](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-field-config-bootstrap-v3-bootstrap-dynamic-resources)
+中设置。
+
+> **/v3/discovery:endpoints**
+
+请参阅
+[eds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/endpoint/v3/eds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+eds_config:
+  api_config_source:
+    api_type: REST
+    cluster_names: [some_xds_cluster]
+```
+
+在 
+[Cluster](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-msg-config-cluster-v3-cluster)
+配置的
+[eds_cluster_config(https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-eds-cluster-config)
+字段中设置。
+
+> **POST /v3/discovery:listeners**
+
+请参阅
+[lds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/listener/v3/lds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+lds_config:
+  api_config_source:
+    api_type: REST
+    cluster_names: [some_xds_cluster]
+```
+
+> **POST /v3/discovery:routes**
+
+请参阅
+[rds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/route/v3/rds.proto) 了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+route_config_name: some_route_name
+config_source:
+  api_config_source:
+    api_type: REST
+    cluster_names: [some_xds_cluster]
+```
+
+在
+[HttpConnectionManager](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-msg-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager)
+配置的
+[rds](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-rds)
+字段中设置。
+
+> **注意**
+> 响应这些端点的管理服务器必须使用 [DiscoveryResponse](https://www.envoyproxy.io/docs/envoy/latest/api-v3/service/discovery/v3/discovery.proto#envoy-v3-api-msg-service-discovery-v3-discoveryresponse) 以及 HTTP 状态 200 进行响应。此外，如果提供的配置没有改变（如 Envoy 客户端提供的版本所示），那么管理服务器可以用空主体和 HTTP 状态 304 进行响应。
+
+## 聚合发现服务
+
+虽然 Envoy 从根本上采用了最终一致性模型，但 ADS 提供了一个机会来对 API 更新推送进行排序，并确保单个管理服务器对 Envoy 节点的 API 更新具有亲和性。ADS 允许管理服务器在单个双向 gRPC 流上传递一个或多个 API 及其资源。如果没有此功能，某些 API（例如 RDS 和 EDS）可能需要管理多个流和与不同管理服务器的连接。
+
+ADS 将允许通过适当的排序无中断地更新配置。例如，假设 *foo.com* 已映射到群集 *X*。我们希望更改路由表中的映射以将 *foo.com* 指向群集 *Y*。为了做到这一点，必须首先提供包含群集 *X* 和 *Y* 的 CDS/EDS 更新。
+
+如果没有 ADS，CDS/EDS/RDS 流可能会指向不同的管理服务器，或者在同一管理服务器上指向需要协调的不同 gRPC 流/连接。EDS 资源请求可能会分为两个不同的流，一个用于 *X*，一个用于 *Y*。ADS允许将它们合并为单个流并发送到单个管理服务器，从而无需分布式同步来正确排序更新。使用 ADS，管理服务器将在单个流上提供 CDS、EDS 和 RDS 更新。
+
+ADS 仅适用于 gRPC 流式传输（不适用于 REST），在 [xDS](https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#xds-protocol-ads) 文档中有更详细的描述。gRPC 端点是：
+
+> **POST /envoy.service.discovery.v3.AggregatedDiscoveryService/StreamAggregatedResources**
+
+请参阅 
+[discovery.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/discovery/v3/discovery.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+  ads_config:
+    api_type: GRPC
+    grpc_services:
+    - envoy_grpc:
+        cluster_name: xds_cluster
+  cds_config:
+```
+
+在
+[Bootstrap](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-msg-config-bootstrap-v3-bootstrap)
+配置的
+[dynamic_resources](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-field-config-bootstrap-v3-bootstrap-dynamic-resources)
+中设置。
+
+设置此项后，[上述](https://www.envoyproxy.io/docs/envoy/latest/configuration/overview/xds_api#v3-grpc-streaming-endpoints)任何配置源都可以设置为使用 ADS 通道。例如，LDS 配置可以从
+
+```yaml
+lds_config:
+  resource_api_version: V3
+  api_config_source:
+    api_type: REST
+    transport_api_version: V3
+    cluster_names: [some_xds_cluster]
+```
+
+到
+
+```yaml
+lds_config: {ads: {}}
+```
+
+结果是 LDS 流将通过共享 ADS 通道定向到 *some_ads_cluster*。
+
+## 增量端点
+
+REST、文件系统和原始 gRPC xDS 实现都提供“世界状态”更新：每个 CDS 更新都必须包含每个集群，更新中缺少集群意味着集群已消失。对于拥有大量资源甚至少量流失的 Envoy 部署，这些世界状态更新可能会很麻烦。
+
+从 1.12.0 开始，Envoy 支持 xDS（包括 ADS）的“delta”变体，其中更新仅包含添加/更改/删除的资源。Delta xDS 是一种 gRPC（唯一）协议。Delta 使用与 SotW（DeltaDiscovery{Request,Response}）不同的请求/响应协议；请参阅 discovery.proto。从概念上讲，delta 应该被视为一种新的 xDS 传输类型：有静态、文件系统、REST、gRPC-SotW 以及现在的 gRPC-delta。（Envoy 对 gRPC-SotW/delta 客户端的实现恰好在两者之间共享了大部分代码，并且在服务器端可能也会出现类似的事情。然而，它们实际上是不兼容的协议。delta xDS 协议行为的规范在这里。）
+
+要使用 delta，只需将ApiConfigSource原型的 api_type 字段设置 为 DELTA_GRPC。这适用于 xDS 和 ADS；对于 ADS，它是 DynamicResources.ads_config的 api_type 字段，如上一节所述。
+
+## TTL
+
+使用 xDS 时，用户可能会发现自己想要临时更新某些 xDS 资源。为了安全地执行此操作，可以使用 xDS TTL 来确保如果控制平面不可用且无法恢复 xDS 更改，Envoy 将在服务器指定的 TTL 后删除该资源。 有关更多信息，请参阅协议文档。
+
+目前，TTL 过期时的行为是删除资源（而不是恢复到以前的版本）。因此，此功能主要应用于希望资源不存在而不是临时版本的用例，例如使用 RTDS 应用临时运行时覆盖时。
+
+TTL 在资源协议上指定：对于 Delta xDS，它直接在响应中指定，而对于 SotW xDS，服务器可能会将响应中列出的各个资源包装在 资源中，以指定 TTL 值。
+
+服务器可以通过对同一版本发出另一个响应来刷新或修改 TTL。在这种情况下，不必包含资源本身。
