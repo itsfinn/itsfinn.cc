@@ -525,3 +525,54 @@ Envoy 中的每个配置资源在 中都有一个类型 URL `typed_config`。
 |---|---|---|
 |extension_config_missing|Counter|由于缺少侦听器过滤器扩展配置，关闭的连接总数|
 |network_extension_config_missing|Counter|由于缺少网络过滤器扩展配置而关闭的连接总数|
+
+# xDS API 端点
+
+xDS 管理服务器将根据 gRPC 和(或) REST 服务的要求实现以下端点。在流式 gRPC 和 REST-JSON 情况下，都会按照
+[xDS 协议](https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#xds-protocol)
+发送
+[DiscoveryRequest](https://www.envoyproxy.io/docs/envoy/latest/api-v3/service/discovery/v3/discovery.proto#envoy-v3-api-msg-service-discovery-v3-discoveryrequest)
+并接收
+[DiscoveryResponse](https://www.envoyproxy.io/docs/envoy/latest/api-v3/service/discovery/v3/discovery.proto#envoy-v3-api-msg-service-discovery-v3-discoveryresponse)。
+
+下面我们描述 v3 传输 API 的端点。
+
+## gRPC 流式传输端点
+
+> **POST /envoy.service.cluster.v3.ClusterDiscoveryService/StreamClusters**
+
+请参阅
+[cds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/cluster/v3/cds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+      - envoy_grpc:
+          cluster_name: xds_cluster
+  lds_config:
+    api_config_source:
+      api_type: GRPC
+```
+
+在
+[Bootstrap](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-msg-config-bootstrap-v3-bootstrap)
+配置的 
+[dynamic_resources](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/bootstrap/v3/bootstrap.proto#envoy-v3-api-field-config-bootstrap-v3-bootstrap-dynamic-resources)
+中设置。
+
+> **POST /envoy.service.endpoint.v3.EndpointDiscoveryService/StreamEndpoints**
+
+请参阅
+[cds.proto](https://github.com/envoyproxy/envoy/blob/79958991ffe0cf8d59a4a351646c76d672dada83/api/envoy/service/cluster/v3/cds.proto)
+了解服务定义。当 Envoy 以此作为客户端时，
+
+```yaml
+eds_config:
+  api_config_source:
+    api_type: GRPC
+    grpc_services:
+    - envoy_grpc:
+        cluster_name: some_xds_cluster
+```
