@@ -836,3 +836,53 @@ REST、文件系统和原始 gRPC xDS 实现都提供“世界状态”更新：
 TTL 在资源协议上指定：对于 Delta xDS，它直接在响应中指定，而对于 SotW xDS，服务器可能会将响应中列出的各个资源包装在 资源中，以指定 TTL 值。
 
 服务器可以通过对同一版本发出另一个响应来刷新或修改 TTL。在这种情况下，不必包含资源本身。
+
+# 管理服务器
+
+## 管理服务器无法访问
+
+当 Envoy 实例与管理服务器失去连接时，Envoy 将锁定以前的配置，同时在后台主动重试以重新建立与管理服务器的连接。
+
+重要的是，Envoy 能够检测到与管理服务器的连接何时不健康，以便可以尝试建立新连接。 建议在连接到管理服务器的集群中配置 
+[TCP keep-alive](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-upstreamconnectionoptions-tcp-keepalive)
+或
+[HTTP/2 keepalive](https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-http2protocoloptions-connection-keepalive) 。
+
+Envoy 调试记录了每次尝试连接时无法与管理服务器建立连接的事实。
+
+[Connected_state](https://www.envoyproxy.io/docs/envoy/latest/configuration/overview/mgmt_server#management-server-stats)
+统计数据提供了监控此行为的信号。
+
+## 统计数据
+
+管理服务器有一个以 *control_plane* 为根的统计树，其中包含以下统计数据：
+
+
+|名称|类型|描述|
+|---|---|---|
+|connected_state|Gauge|布尔值（1 表示已连接，0 表示已断开连接），指示与管理服务器的当前连接状态|
+|rate_limit_enforced|Counter|对管理服务器请求实施速率限制的总次数|
+|pending_requests|Gauge|强制执行速率限制时待处理的请求总数|
+|identifier|TextReadout|发送最后一个发现响应的控制平面实例的标识符|
+
+## xDS 订阅统计
+
+Envoy 通过称为 xDS 的发现服务发现各种动态资源。Envoy 通过订阅的方式获取这些资源，具体的方式是指定要监视的文件系统路径, 启动 gRPC 流或轮询 REST-JSON URL。
+
+Envoy 会为所有订阅生成以下统计数据。
+
+
+
+|名称|类型|描述|
+|---|---|---|
+|config_reload|Counter|由于配置不同而导致配置重新加载的 API 提取总数|
+|config_reload_time_ms|Gauge|自 Unix Epoch(1970年1月1日00:00:00 UTC)以来最后一次配置重新加载的时间戳（以毫秒为单位）|
+|init_fetch_timeout|Counter|初始获取超时|
+|update_attempt|Counter|尝试获取 API 的总数|
+|update_success|Counter|成功完成的 API 提取总数|
+|update_failure|Counter|由于网络错误而失败的 API 提取总数|
+|update_rejected|Counter|由于架构/验证错误而失败的 API 提取总数|
+|update_time|Gauge|上次成功获取 API 的时间戳，以自Unix Epoch(1970年1月1日00:00:00 UTC)以​​来的毫秒数表示。即使在不包含任何配置更改的简单配置重新加载后也会刷新。|
+|version|Gauge|上次成功 API 获取的内容的哈希值|
+|version_text|TextReadout|上次成功获取 API 的版本文本|
+|control_plane.connected_state|Gauge|布尔值（1 表示已连接，0 表示已断开连接），指示与管理服务器的当前连接状态|
