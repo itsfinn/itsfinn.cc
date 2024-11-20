@@ -517,8 +517,7 @@ Envoy 中的每个配置资源在 中都有一个类型 URL `typed_config`。
 |config_fail|Counter|配置更新失败总数|
 |config_conflict|Counter|配置更新冲突的应用程序总数；当新的侦听器由于类型 URL 无效而无法重用已订阅的扩展配置时，可能会发生这种情况。|
 
-此外，还支持以下统计数据来表明由于缺少配置而导致连接被关闭，
-其根是 listener.<address>（或 listener.<stat_prefix>。如果 stat_prefix 非空）。
+此外，还支持以下统计数据来表明由于缺少配置而导致连接被关闭, 其根是 listener.<address>（或 listener.<stat_prefix>。如果 stat_prefix 非空）。
 
 
 |名称|类型|描述|
