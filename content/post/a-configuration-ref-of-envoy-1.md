@@ -10,7 +10,7 @@ DisableComments: false
 
 本文档基于 v1.28, 原文地址: [https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/configuration)
 
-Envoy 官网配置指南的中文翻译(概览)
+Envoy 官网配置指南的中文翻译(概览):版本控制、引导配置、配置示例、扩展配置、xDS API 端点、管理服务器
 <!--more-->
 
 # 介绍
