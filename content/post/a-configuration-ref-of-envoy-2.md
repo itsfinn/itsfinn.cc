@@ -95,7 +95,7 @@ Envoy 官网配置指南的中文翻译(监听):统计数据、运行时、监�
 
 ## UDP 统计信息
 
-以下 UDP 统计信息适用于 UDP 侦听器，并且以 *listener.<address>.udp.* 为根：
+以下 UDP 统计信息适用于 UDP 侦听器，并且以 *listener.\<address\>.udp.* 为根：
 
 |名称                            |类型             |描述|
 |--------------------------------|-----------------|------------------------------|
@@ -103,7 +103,7 @@ Envoy 官网配置指南的中文翻译(监听):统计数据、运行时、监�
 
 ## 每个监听处理程序统计信息
 
-每个监听器都另外有一个统计信息树，其根为 *listener.<address>.<handler>.*，其中包含每个处理程序的统计信息。如 
+每个监听器都另外有一个统计信息树，其根为 *listener.\<address\>.\<handler\>.*，其中包含每个处理程序的统计信息。如 
 [线程模型](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/intro/threading_model#arch-overview-threading)
 文档中所述，Envoy 有一个线程模型，其中包括主线程以及由 `--concurrency` 选项控制的 多个工作线程。 根路径里的 \<handler\> 等于main_thread、 worker_0、worker_1 等。这些统计数据可用于查找已接受或活动连接上每个处理程序/工作程序的不平衡情况。
 
