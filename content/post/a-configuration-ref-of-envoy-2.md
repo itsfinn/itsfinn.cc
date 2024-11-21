@@ -8,7 +8,7 @@ Categories: ["envoy"]
 DisableComments: false
 ---
 
-本文档基于 v1.28, 原文地址: [https://www.envoyproxy.io/docs/envoy/v1.28.0/intro/intro](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/configuration)
+本文档基于 v1.28, 原文地址: https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/configuration
 
 Envoy 官网配置指南的中文翻译(监听):统计数据、运行时、监听过滤器、网络过滤器、UDP监听过滤器、监听发现服务（LDS）
 <!--more-->
@@ -25,132 +25,109 @@ Envoy 官网配置指南的中文翻译(监听):统计数据、运行时、监�
 
 ## 监听器
 
-每个监听器都有一个以 listener.\<address\>. 为根的统计树（如果 stat_prefix 非空，则为listener.<stat_prefix>. ），包含以下统计信息：
+每个监听器都有一个以 *listener.\<address\>.* 为根的统计树（如果 stat_prefix 非空，则为 *listener.<stat_prefix>.*），包含以下统计信息：
 
-|Name                                            |Type              |Description|
-|------------------------------------------------|----------------- |---------------------------------------------------------------------------------|
+|名称                                             |类型               |描述|
+|------------------------------------------------|----------------- |------------------------------------|
 |downstream_cx_total                             |Counter           |连接总数|
-|downstream_cx_destroy                           |Counter           |Total destroyed connections|
-|downstream_cx_active                            |Gauge             |Total active connections|
-|downstream_cx_length_ms                         |Histogram         |Connection length milliseconds|
-|downstream_cx_transport_socket_connect_timeout  |Counter           |Total connections that timed out during transport socket connection negotiation|
-|downstream_cx_overflow                          |Counter           |Total connections rejected due to enforcement of listener connection limit|
-|downstream_cx_overload_reject                   |Counter           |Total connections rejected due to configured overload actions|
-|downstream_global_cx_overflow                   |Counter           |Total connections rejected due to enforcement of global connection limit|
-|connections_accepted_per_socket_event           |Histogram         |Number of connections accepted per listener socket event|
-|downstream_pre_cx_timeout                       |Counter           |Sockets that timed out during listener filter processing|
-|downstream_pre_cx_active                        |Gauge             |Sockets currently undergoing listener filter processing|
-|extension_config_missing                        |Counter           |Total connections closed due to missing listener filter extension configuration|
-|network_extension_config_missing                |Counter           |Total connections closed due to missing network filter extension configuration|
-|global_cx_overflow                              |Counter           |Total connections rejected due to enforcement of the global connection limit|
-|no_filter_chain_match                           |Counter           |Total connections that didn\'t match any filter chain|
-|downstream_listener_filter_remote_close         |Counter           |Total connections closed by remote when peek data for listener filters|
-|downstream_listener_filter_error                |Counter           |Total numbers of read errors when peeking data for listener filters|
+|downstream_cx_destroy                           |Counter           |被破坏的连接总数|
+|downstream_cx_active                            |Gauge             |活动连接总数|
+|downstream_cx_length_ms                         |Histogram         |连接长度 毫秒|
+|downstream_cx_transport_socket_connect_timeout  |Counter           |传输套接字连接协商期间超时的连接总数|
+|downstream_cx_overflow                          |Counter           |由于强制执行侦听器连接限制而拒绝的连接总数|
+|downstream_cx_overload_reject                   |Counter           |由于配置的过载操作而拒绝的连接总数|
+|downstream_global_cx_overflow                   |Counter           |由于强制执行全局连接限制而拒绝的连接总数|
+|connections_accepted_per_socket_event           |Histogram         |每个监听套接字事件接受的连接数|
+|downstream_pre_cx_timeout                       |Counter           |侦听器过滤器处理期间超时的套接字|
+|downstream_pre_cx_active                        |Gauge             |当前正在接受侦听器过滤器处理的套接字|
+|extension_config_missing                        |Counter           |由于缺少侦听器过滤器扩展配置，关闭的连接总数|
+|network_extension_config_missing                |Counter           |由于缺少网络过滤器扩展配置而关闭的连接总数|
+|global_cx_overflow                              |Counter           |由于强制执行全局连接限制而拒绝的连接总数|
+|no_filter_chain_match                           |Counter           |不匹配任何过滤链的连接总数|
+|downstream_listener_filter_remote_close         |Counter           |当侦听器过滤器查看数据时远程关闭的连接总数|
+|downstream_listener_filter_error                |Counter           |监听过滤器获取数据时读取错误的总数|
 
-# TLS statistics {#config_listener_stats_tls}
+## TLS 统计数据
 
-The following TLS statistics are rooted at *listener.\<address\>.ssl.*:
+以下 TLS 统计数据的根为 *listener.\<address\>.ssl.*：
 
-|Name                   |Type             |Description|
-|-----------------------|-----------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-|connection_error       |Counter          |Total TLS connection errors not including failed certificate verifications|
-|handshake              |Counter          |Total successful TLS connection handshakes|
-|session_reused         |Counter          |Total successful TLS session resumptions|
-|no_certificate         |Counter          |Total successful TLS connections with no client certificate|
-|fail_verify_no_cert    |Counter          |Total TLS connections that failed because of missing client certificate|
-|fail_verify_error      |Counter          |Total TLS connections that failed CA verification|
-|fail_verify_san        |Counter          |Total TLS connections that failed SAN verification|
-|fail_verify_cert_hash  |Counter          |Total TLS connections that failed certificate pinning verification|
-|ocsp_staple_failed     |Counter          |Total TLS connections that failed compliance with the OCSP policy|
-|ocsp_staple_omitted    |Counter          |Total TLS connections that succeeded without stapling an OCSP response|
-|ocsp_staple_responses  |Counter          |Total TLS connections where a valid OCSP response was available (irrespective of whether the client requested stapling)|
-|ocsp_staple_requests   |Counter          |Total TLS connections where the client requested an OCSP staple|
-|ciphers.\<cipher\>     |Counter          |Total successful TLS connections that used cipher \<cipher\>|
-|curves.\<curve\>       |Counter          |Total successful TLS connections that used ECDHE curve \<curve\>|
-|sigalgs.\<sigalg\>     |Counter          |Total successful TLS connections that used signature algorithm \<sigalg\>|
-|versions.\<version\>   |Counter          |Total successful TLS connections that used protocol version \<version\>|
-|was_key_usage_invalid  |Counter          |Total successful TLS connections that used an [invalid keyUsage extension]. (This is not avaiable in BoringSSL FIPS yet due to [issue #28246])|
+|名称                    |类型             |描述|
+|-----------------------|-----------------|-----------------------------------------------------------|
+|connection_error       |Counter          |TLS 连接错误总数（不包括失败的证书验证）|
+|handshake              |Counter          |成功的 TLS 连接握手总数|
+|session_reused         |Counter          |成功恢复 TLS 会话的总数|
+|no_certificate         |Counter          |没有客户端证书的成功 TLS 连接总数|
+|fail_verify_no_cert    |Counter          |由于缺少客户端证书而失败的 TLS 连接总数|
+|fail_verify_error      |Counter          |未通过 CA 验证的 TLS 连接总数|
+|fail_verify_san        |Counter          |未通过 SAN 验证的 TLS 连接总数|
+|fail_verify_cert_hash  |Counter          |证书固定验证失败的 TLS 连接总数|
+|ocsp_staple_failed     |Counter          |不符合 OCSP 策略的 TLS 连接总数|
+|ocsp_staple_omitted    |Counter          |未绑定 OCSP 响应且成功的 TLS 连接总数|
+|ocsp_staple_responses  |Counter          |具有有效 OCSP 响应的 TLS 连接总数（无论客户端是否请求装订 OCSP 响应）|
+|ocsp_staple_requests   |Counter          |客户端请求装订 OCSP 响应的 TLS 连接总数|
+|ciphers.\<cipher\>     |Counter          |使用密码套件 \<cipher\> 的成功 TLS 连接总数|
+|curves.\<curve\>       |Counter          |使用椭圆曲线 \<curve\> 的成功 TLS 连接总数|
+|sigalgs.\<sigalg\>     |Counter          |使用签名算法 \<sigalg\> 的成功 TLS 连接总数|
+|versions.\<version\>   |Counter          |使用协议版本 \<version\> 的成功 TLS 连接总数|
+|was_key_usage_invalid  |Counter          |使用[无效 keyUsage 扩展](https://github.com/google/boringssl/blob/6f13380d27835e70ec7caf807da7a1f239b10da6/ssl/internal.h#L3117)的成功 TLS 连接总数。（由于 [issue #28246](https://github.com/envoyproxy/envoy/issues/28246)，此功能在 BoringSSL FIPS 中尚不可用）|
 
-# TCP statistics {#config_listener_stats_tcp}
+## TCP statistics {#config_listener_stats_tcp}
 
-The following TCP statistics, which are available when using the `TCP stats transport socket <envoy_v3_api_msg_extensions.transport_sockets.tcp_stats.v3.Config>`{.interpreted-text role="ref"},
-are rooted at *listener.\<address\>.tcp_stats.*:
+使用 TCP 统计传输套接字时可用的以下 TCP 统计信息以 *listener.\<address\>.tcp_stats.* 为根：
 
-:::: note
-::: title
-Note
-:::
+> **注意**
+> 这些指标由操作系统提供。由于可用的操作系统指标和测量方法存在差异，因此不同操作系统或同一操作系统的不同版本之间的值可能不一致。
 
-These metrics are provided by the operating system. Due to differences in operating system metrics available and the methodology
-used to take measurements, the values may not be consistent across different operating systems or versions of the same operating
-system.
-::::
+|名称                                   |类型             |描述|
+|--------------------------------------|-----------------|--------------------------------------|
+|cx_tx_segments                        |Counter          |已传输的 TCP 段总数|
+|cx_rx_segments                        |Counter          |已接收的 TCP 段总数|
+|cx_tx_data_segments                   |Counter          |已传输非零数据长度的 TCP 段总数|
+|cx_rx_data_segments                   |Counter          |收到的数据长度非零的 TCP 段总数|
+|cx_tx_retransmitted_segments          |Counter          |重新传输的 TCP 段总数|
+|cx_rx_bytes_received                  |Counter          |已接收并发送 TCP 确认的总有效负载字节数。|
+|cx_tx_bytes_sent                      |Counter          |已传输的有效负载字节总数（包括重新传输的字节）。|
+|cx_tx_unsent_bytes                    |Gauge            |Envoy 已发送给操作系统但尚未发送的字节数|
+|cx_tx_unacked_segments                |Gauge            |已发送但尚未被确认的段|
+|cx_tx_percent_retransmitted_segments  |Histogram        |连接中重新传输的段的百分比|
+|cx_rtt_us                             |Histogram        |平滑的往返时间估计（以微秒为单位）|
+|cx_rtt_variance_us                    |Histogram        |估计往返时间的微秒差异。值越高，差异越大。|
 
-|Name                                  |Type             |Description|
-|--------------------------------------|-----------------|------------------------------------------------------------------------------------------------------|
-|cx_tx_segments                        |Counter          |Total TCP segments transmitted|
-|cx_rx_segments                        |Counter          |Total TCP segments received|
-|cx_tx_data_segments                   |Counter          |Total TCP segments with a non-zero data length transmitted|
-|cx_rx_data_segments                   |Counter          |Total TCP segments with a non-zero data length received|
-|cx_tx_retransmitted_segments          |Counter          |Total TCP segments retransmitted|
-|cx_rx_bytes_received                  |Counter          |Total payload bytes received for which TCP acknowledgments have been sent.|
-|cx_tx_bytes_sent                      |Counter          |Total payload bytes transmitted (including retransmitted bytes).|
-|cx_tx_unsent_bytes                    |Gauge            |Bytes which Envoy has sent to the operating system which have not yet been sent|
-|cx_tx_unacked_segments                |Gauge            |Segments which have been transmitted that have not yet been acknowledged|
-|cx_tx_percent_retransmitted_segments  |Histogram        |Percent of segments on a connection which were retransmistted|
-|cx_rtt_us                             |Histogram        |Smoothed round trip time estimate in microseconds|
-|cx_rtt_variance_us                    |Histogram        |Estimated variance in microseconds of the round trip time. Higher values indicated more variability.|
+## UDP 统计信息
 
-# UDP statistics {#config_listener_stats_udp}
+以下 UDP 统计信息适用于 UDP 侦听器，并且以 *listener.<address>.udp.* 为根：
 
-The following UDP statistics are available for UDP listeners and are rooted at
-*listener.\<address\>.udp.*:
+|名称                            |类型             |描述|
+|--------------------------------|-----------------|------------------------------|
+|downstream_rx_datagram_dropped  |Counter          |由于内核溢出或截断而丢弃的数据报数量|
 
-|Name                            |Type             |Description|
-|--------------------------------|-----------------|------------------------------------------------------------------|
-|downstream_rx_datagram_dropped  |Counter          |Number of datagrams dropped due to kernel overflow or truncation|
+## 每个监听处理程序统计信息
 
-# Per-handler Listener Stats {#config_listener_stats_per_handler}
+每个监听器都另外有一个统计信息树，其根为 *listener.<address>.<handler>.*，其中包含每个处理程序的统计信息。如 
+[线程模型](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/intro/threading_model#arch-overview-threading)
+文档中所述，Envoy 有一个线程模型，其中包括主线程以及由 `--concurrency` 选项控制的 多个工作线程。 根路径里的 \<handler\> 等于main_thread、 worker_0、worker_1 等。这些统计数据可用于查找已接受或活动连接上每个处理程序/工作程序的不平衡情况。
 
-Every listener additionally has a statistics tree rooted at *listener.\<address\>.\<handler\>.* which
-contains *per-handler* statistics. As described in the
-`threading model <arch_overview_threading>`{.interpreted-text role="ref"} documentation, Envoy has a threading model which
-includes the *main thread* as well as a number of *worker threads* which are controlled by the
-`--concurrency`{.interpreted-text role="option"} option. Along these lines, *\<handler\>* is equal to *main_thread*,
-*worker_0*, *worker_1*, etc. These statistics can be used to look for per-handler/worker imbalance
-on either accepted or active connections.
+|名称                   |类型             |描述|
+|----------------------|-----------------|-----------------------------------------|
+|downstream_cx_total   |Counter          |此处理程序上的总连接数。|
+|downstream_cx_active  |Gauge            |此处理程序上的活动连接总数。|
 
-|Name                  |Type             |Description
-|----------------------|-----------------|-------------------------------------------
-|downstream_cx_total   |Counter          |Total connections on this handler.
-|downstream_cx_active  |Gauge            |Total active connections on this handler.
+## 监听管理器
 
-# Listener manager {#config_listener_manager_stats}
+监听管理器有一个以 *listener_manager* 为根的统计信息树，包含以下统计信息。统计信息名称中的任何字符 `:` 都将被替换为 `_`。
 
-The listener manager has a statistics tree rooted at *listener_manager.* with the following
-statistics. Any `:` character in the stats name is replaced with `_`.
-
-|Name                          |Type             |Description|
-|------------------------------|-----------------|-------------------------------------------------------------------------------------------------------------|
-|listener_added                |Counter          |Total listeners added (either via static config or LDS).|
-|listener_modified             |Counter          |Total listeners modified (via LDS).|
-|listener_removed              |Counter          |Total listeners removed (via LDS).|
-|listener_stopped              |Counter          |Total listeners stopped.|
-|listener_create_success       |Counter          |Total listener objects successfully added to workers.|
-|listener_create_failure       |Counter          |Total failed listener object additions to workers.|
-|listener_in_place_updated     |Counter          |Total listener objects created to execute filter chain update path.|
-|total_filter_chains_draining  |Gauge            |Number of currently draining filter chains.|
-|total_listeners_warming       |Gauge            |Number of currently warming listeners.|
-|total_listeners_active        |Gauge            |Number of currently active listeners.|
-|total_listeners_draining      |Gauge            |Number of currently draining listeners.|
-|workers_started               |Gauge            |A boolean (1 if started and 0 otherwise) that indicates whether listeners have been initialized on workers.|
-
-  [Listener]: #listener {#toc-listener}
-  [TLS statistics]: #config_listener_stats_tls {#toc-config_listener_stats_tls}
-  [TCP statistics]: #config_listener_stats_tcp {#toc-config_listener_stats_tcp}
-  [UDP statistics]: #config_listener_stats_udp {#toc-config_listener_stats_udp}
-  [Per-handler Listener Stats]: #config_listener_stats_per_handler {#toc-config_listener_stats_per_handler}
-  [Listener manager]: #config_listener_manager_stats {#toc-config_listener_manager_stats}
-  [invalid keyUsage extension]: https://github.com/google/boringssl/blob/6f13380d27835e70ec7caf807da7a1f239b10da6/ssl/internal.h#L3117
-  [issue #28246]: https://github.com/envoyproxy/envoy/issues/28246
+|名称                           |类型       |描述|
+|------------------------------|----------|----------------------------------------------------------------|
+|listener_added                |Counter   |已添加的监听器总数（通过静态配置或 LDS）。|
+|listener_modified             |Counter   |修改的听众总数（通过 LDS）。|
+|listener_removed              |Counter   |已删除的听众总数（通过 LDS）。|
+|listener_stopped              |Counter   |停止的监听总数|
+|listener_create_success       |Counter   |添加到工作线程成功的监听器总数|
+|listener_create_failure       |Counter   |添加到工作线程失败的监听器总数|
+|listener_in_place_updated     |Counter   |为执行过滤器链更新路径而创建的监听器对象总数。|
+|total_filter_chains_draining  |Gauge     |当前正在排空的过滤器链的数量。|
+|total_listeners_warming       |Gauge     |当前正在预热的监听器总数|
+|total_listeners_active        |Gauge     |当前活跃的监听器总数|
+|total_listeners_draining      |Gauge     |当前正在排空的监听器总数|
+|workers_started               |Gauge     |一个布尔值（如果已启动则为 1，否则为 0），指示监听器是否已在工作线程上初始化。|
 
