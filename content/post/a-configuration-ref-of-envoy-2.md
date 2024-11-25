@@ -159,9 +159,7 @@ HTTP Inspector 监听过滤器允许检测应用程序协议是否为 HTTP，
   `type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector`。
 - [监听器过滤器 v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/http_inspector/v3/http_inspector.proto#envoy-v3-api-msg-extensions-filters-listener-http-inspector-v3-httpinspector)
 
-### 例子
-
-示例过滤器配置可能是：
+过滤器配置示例如下：
 
 ``` yaml
 listener_filters:
@@ -170,20 +168,54 @@ listener_filters:
       "@type": type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector
 ```
 
-### 统计数据
-
 此过滤器有一个以 *http_inspector* 为根的统计树，其统计数据如下：
 
 |名称 |类型 |描述|
-|----------------|-----------------|------------- --------------------------------------------------|
+|----------------|-----------------|---------------------------------------------------------------|
 |read_error |计数器 |总读取错误|
 |http10_found |计数器 |发现 HTTP/1.0 的总次数|
 |http11_found |计数器 |发现 HTTP/1.1 的总次数|
 |http2_found |计数器 |发现 HTTP/2 的总次数|
 |http_not_found |计数器 |未找到 HTTP 协议的总次数|
 
+## 本地速率限制
 
-## Local rate limit
+- 本地速率限制`架构概述`
+- 此过滤器 URL 类型应配置为 `type.googleapis.com/envoy.extensions.filters.listener.local_ratelimit.v3.LocalRateLimit`。
+  v3 API 参考
+
+> **注意**
+>
+> 令牌桶在所有工作进程之间共享，因此速率限制适用于每个 Envoy 进程。
+
+> **注意**
+>
+> 还通过“全局速率限制网络过滤器”支持网络层的全局速率限制。
+
+### 概述
+
+本地速率限制过滤器采用“令牌桶”速率
+限制由过滤器的过滤器链处理的传入套接字。每个套接字
+过滤器处理的每个请求都使用一个令牌，如果没有可用的令牌，套接字将
+立即关闭，无需进一步过滤迭代。
+
+> **注意**
+>
+> 在当前实现中，每个过滤器和过滤器链都有独立的速率限制。
+
+### 统计数据
+
+每个配置的本地速率限制过滤器都有以 *listener_local_ratelimit.\<stat_prefix\>.* 为根的统计信息。
+统计数据如下：
+
+|名称 |类型 |描述|
+|----------------|-----------------|-------------|
+|rate_limited |计数器|由于超出速率限制而关闭的总套接字数|
+
+# 运行时
+
+本地速率限制过滤器可以通过“启用”来标记运行时功能配置字段。
+
 ### Overview
 ### Statistics
 ### Runtime
