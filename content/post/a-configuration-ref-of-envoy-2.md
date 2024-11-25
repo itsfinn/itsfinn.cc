@@ -131,3 +131,73 @@ Envoy 官网配置指南的中文翻译(监听):统计数据、运行时、监�
 |total_listeners_draining      |Gauge     |当前正在排空的监听器总数|
 |workers_started               |Gauge     |一个布尔值（如果已启动则为 1，否则为 0），指示监听器是否已在工作线程上初始化。|
 
+# 运行时
+
+支持以下运行时设置：
+
+envoy.resource_limits.listener.\<name of listener\>.connection_limit
+
+设置指定侦听器的活动连接数限制。
+
+# 监听过滤器
+
+Envoy 具有以下内置监听过滤器。
+
+## HTTP Inspector
+
+HTTP Inspector 监听过滤器允许检测应用程序协议是否为 HTTP，
+如果是 HTTP，它会进一步检测 HTTP 协议（​​HTTP/1.x 或 HTTP/2）。
+可以通过
+[FilterChainMatch](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener_components.proto#envoy-v3-api-msg-config-listener-v3-filterchainmatch)
+的 
+[application_protocols](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener_components.proto#envoy-v3-api-field-config-listener-v3-filterchainmatch-application-protocols)
+选择 
+[FilterChain](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener_components.proto#envoy-v3-api-msg-config-listener-v3-filterchain)
+来使用 HTTP Inspector 监听过滤器。
+
+- 此过滤器应配置为 URL 类型
+  `type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector`。
+- [监听器过滤器 v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/http_inspector/v3/http_inspector.proto#envoy-v3-api-msg-extensions-filters-listener-http-inspector-v3-httpinspector)
+
+### 例子
+
+示例过滤器配置可能是：
+
+``` yaml
+listener_filters:
+  - name: "envoy.filters.listener.http_inspector"
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector
+```
+
+### 统计数据
+
+此过滤器有一个以 *http_inspector* 为根的统计树，其统计数据如下：
+
+|名称 |类型 |描述|
+|----------------|-----------------|------------- --------------------------------------------------|
+|read_error |计数器 |总读取错误|
+|http10_found |计数器 |发现 HTTP/1.0 的总次数|
+|http11_found |计数器 |发现 HTTP/1.1 的总次数|
+|http2_found |计数器 |发现 HTTP/2 的总次数|
+|http_not_found |计数器 |未找到 HTTP 协议的总次数|
+
+
+## Local rate limit
+### Overview
+### Statistics
+### Runtime
+## Original Destination
+### Linux
+### Windows
+### Internal listeners
+## Original Source
+### Interaction with Proxy Protocol
+### IP Version Support
+### Extra Setup
+### Example Listener configuration
+## Proxy Protocol
+### Statistics
+## TLS Inspector
+### Example
+### Statistics
