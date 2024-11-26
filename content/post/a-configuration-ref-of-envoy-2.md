@@ -71,7 +71,7 @@ Envoy 官网配置指南的中文翻译(监听):统计数据、运行时、监�
 |versions.\<version\>   |Counter          |使用协议版本 \<version\> 的成功 TLS 连接总数|
 |was_key_usage_invalid  |Counter          |使用[无效 keyUsage 扩展](https://github.com/google/boringssl/blob/6f13380d27835e70ec7caf807da7a1f239b10da6/ssl/internal.h#L3117)的成功 TLS 连接总数。（由于 [issue #28246](https://github.com/envoyproxy/envoy/issues/28246)，此功能在 BoringSSL FIPS 中尚不可用）|
 
-## TCP statistics {#config_listener_stats_tcp}
+## TCP statistics
 
 使用 TCP 统计传输套接字时可用的以下 TCP 统计信息以 *listener.\<address\>.tcp_stats.* 为根：
 
@@ -216,18 +216,119 @@ listener_filters:
 
 本地速率限制过滤器可以通过“启用”来标记运行时功能配置字段。
 
-### Overview
-### Statistics
-### Runtime
 ## Original Destination
+
 ### Linux
+
+当连接已被 iptables REDIRECT 目标重定向，或者被 iptables TPROXY 目标结合设置侦听器的“透明”选项重定向时，原始目标侦听器过滤器会读取 SO_ORIGINAL_DST 套接字选项集。
+
 ### Windows
-### Internal listeners
+
+当连接被应用于容器端点的 [HNS](https://docs.microsoft.com/en-us/virtualization/windowscontainers/container-networking/architecture#container-network-management-with-host-network-service) 策略重定向时，原始目标侦听器过滤器会读取设置的 SO_ORIGINAL_DST 套接字选项。要使此过滤器正常工作，必须在侦听器上设置 [traffic_direction](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener.proto#envoy-v3-api-field-config-listener-v3-listener-traffic-direction)。这意味着需要一个单独的侦听器来处理入站和出站流量。
+
+重定向不适用于所有类型的网络流量。支持重定向的数据包类型如下表所示：
+
+- TCP/IPv4
+- UDP
+- 原始 UDPv4，无标头包含选项
+- 原始 ICMP
+
+有关详细信息，请参阅[使用绑定或连接重定向](https://docs.microsoft.com/en-us/windows-hardware/drivers/network/using-bind-or-connect-redirection)
+
+> **注意**
+> 在撰写本文时（2021 年 2 月），操作系统对原始目标的支持仅通过
+> [Windows 预览体验计划](https://insider.windows.com/en-us/for-developers)。
+> 该功能将在即将发布的 Windows Server 版本中得到全面支持，请参阅
+> [Windows Server 发布信息](https://docs.microsoft.com/en-us/windows-server/get-started/windows-server-release-info)。
+
+Envoy 中的后续处理将恢复的目标地址视为连接的本地地址，而不是侦听器正在侦听的地址。此外，
+[原始目标集群](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/upstream/service_discovery#arch-overview-service-discovery-types-original-destination)
+可用于将 HTTP 请求或 TCP 连接转发到恢复的目标地址。
+
+### 内部监听器
+
+原始目标侦听器过滤器读取由
+[内部侦听器](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/other_features/internal_listener#config-internal-listener)
+而不是系统套接字选项处理的用户空间套接字上的动态元数据和过滤器状态对象。
+
+目标地址的动态元数据应放置在字段 *local* 下的键 *envoy.filters.listener.original_dst* 中，并应包含带有 IP 和端口地址的字符串。如果没有动态元数据，则参考过滤器状态。
+
+该过滤器使用的过滤状态对象是：
+
+- *envoy.filters.listener.original_dst.local_ip* 为目标地址
+- *envoy.filters.listener.original_dst.source_ip* 为源地址
+
+请注意
+[内部上游传输](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/other_features/internal_listener#config-internal-upstream-transport)
+应用于将动态元数据从端点主机传递到套接字元数据和(或)通过用户空间套接字与上游连接共享的过滤器状态对象到内部侦听器。
+
+- 此过滤器 URL 类型应配置为`type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst`。
+- [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/original_dst/v3/original_dst.proto#envoy-v3-api-msg-extensions-filters-listener-original-dst-v3-originaldst)
+
+
 ## Original Source
-### Interaction with Proxy Protocol
-### IP Version Support
-### Extra Setup
-### Example Listener configuration
+
+- 此过滤器 URL 类型应配置为`type.googleapis.com/envoy.extensions.filters.listener.original_src.v3.OriginalSrc`。
+- [监听器过滤器 v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/original_src/v3/original_src.proto#envoy-v3-api-msg-extensions-filters-listener-original-src-v3-originalsrc)
+
+原始源侦听器过滤器会在 Envoy 的上游复制连接的下游远程地址。例如，如果下游连接使用 IP 地址 `10.1.2.3` 连接到 Envoy，则 Envoy 将使用源 IP `10.1.2.3` 连接到上游。
+
+> **注意**
+> Windows 不支持此过滤器。
+
+> **注意**
+> Linux 上需要 CAP_NET_ADMIN 功能。
+
+### 与 Proxy Protocol 交互
+
+如果连接的源地址尚未转换或代理，则 Envoy 可以简单地使用现有的连接信息来构建正确的下游远程地址。但是，如果不是这样，则可以使用
+[代理协议过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/listeners/listener_filters/proxy_protocol#config-listener-filters-proxy-protocol)
+来提取下游远程地址。
+
+### IP 版本支持
+
+该过滤器支持 IPv4 和 IPv6 地址。请注意，上游连接必须支持使用的版本。
+
+### 额外设置
+
+使用的下游远程地址很可能是全局可路由的。默认情况下，从上游主机返回该地址的数据包不会通过 Envoy 路由。必须配置网络以强制将 IP 被 Envoy 复制的任何流量路由回 Envoy 主机。
+
+如果 Envoy 和上游位于同一主机上, 例如在 sidecar 部署中，则可以使用 iptables 和路由规则来确保正确的行为。过滤器具有无符号整数配置[mark](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/original_src/v3/original_src.proto#envoy-v3-api-field-extensions-filters-listener-original-src-v3-originalsrc-mark)。将其设置为 *X* 会导致 Envoy 使用值 *X* 标记来自此侦听器的所有上游数据包。请注意，如果将[mark](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/original_src/v3/original_src.proto#envoy-v3-api-field-extensions-filters-listener-original-src-v3-originalsrc-mark)设置为 0，Envoy 将不会标记上游数据包。
+
+我们可以使用以下命令集来确保所有标有 *X*（示例中假设为 123）的 ipv4 和 ipv6 流量都能正确路由。请注意，此示例假设 *eth0* 是默认出站接口。
+
+``` 文本
+iptables -t mangle -I PREROUTING -m mark --mark 123 -j CONNMARK --save-mark
+iptables -t mangle -I OUTPUT -m connmark --mark 123 -j CONNMARK --restore-mark
+ip6tables -t mangle -I PREROUTING -m mark --mark 123 -j CONNMARK --save-mark
+ip6tables -t mangle -I OUTPUT -m connmark --mark 123 -j CONNMARK --restore-mark
+ip 规则添加 fwmark 123 查找 100
+ip 路由添加本地 0.0.0.0/0 dev lo 表 100
+ip -6 规则添加 fwmark 123 查找 100
+ip -6 路由添加本地::/0 dev lo 表 100
+echo 1 > /proc/sys/net/ipv4/conf/eth0/route_localnet
+```
+
+### 监听器配置示例
+
+以下示例将 Envoy 配置为对端口 8888 上的所有连接使用原始源。它使用代理协议来确定下游远程地址。所有上游数据包都标记为 123。
+
+``` yaml
+听众：
+- 地址：
+    套接字地址：
+      地址：0.0.0.0
+      端口值：8888
+  监听器过滤器：
+    - 名称：envoy.filters.listener.proxy_protocol
+      键入的配置：
+        “@type”：type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol
+    - 名称：envoy.filters.listener.original_src
+      键入的配置：
+        “@type”：type.googleapis.com/envoy.extensions.filters.listener.original_src.v3.OriginalSrc
+        分数：123
+```
+
 ## Proxy Protocol
 ### Statistics
 ## TLS Inspector
