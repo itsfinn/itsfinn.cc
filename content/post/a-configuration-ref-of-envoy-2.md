@@ -297,7 +297,7 @@ Envoy 中的后续处理将恢复的目标地址视为连接的本地地址，�
 
 我们可以使用以下命令集来确保所有标有 *X*（示例中假设为 123）的 ipv4 和 ipv6 流量都能正确路由。请注意，此示例假设 *eth0* 是默认出站接口。
 
-``` 文本
+```text
 iptables -t mangle -I PREROUTING -m mark --mark 123 -j CONNMARK --save-mark
 iptables -t mangle -I OUTPUT -m connmark --mark 123 -j CONNMARK --restore-mark
 ip6tables -t mangle -I PREROUTING -m mark --mark 123 -j CONNMARK --save-mark
@@ -314,23 +314,82 @@ echo 1 > /proc/sys/net/ipv4/conf/eth0/route_localnet
 以下示例将 Envoy 配置为对端口 8888 上的所有连接使用原始源。它使用代理协议来确定下游远程地址。所有上游数据包都标记为 123。
 
 ``` yaml
-听众：
-- 地址：
-    套接字地址：
-      地址：0.0.0.0
-      端口值：8888
-  监听器过滤器：
-    - 名称：envoy.filters.listener.proxy_protocol
-      键入的配置：
-        “@type”：type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol
-    - 名称：envoy.filters.listener.original_src
-      键入的配置：
-        “@type”：type.googleapis.com/envoy.extensions.filters.listener.original_src.v3.OriginalSrc
-        分数：123
+listeners:
+- address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8888
+  listener_filters:
+    - name: envoy.filters.listener.proxy_protocol
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol
+    - name: envoy.filters.listener.original_src
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.listener.original_src.v3.OriginalSrc
+        mark: 123
 ```
 
 ## Proxy Protocol
-### Statistics
+
+此监听过滤器增加了对 [HAProxy 代理协议](https://www.haproxy.org/download/1.9/doc/proxy-protocol.txt) 的支持。
+
+在此模式下，下游连接假定来自代理，代理将原始坐标（IP、PORT）放入连接字符串中。然后，Envoy 提取这些并将它们用作远程地址。
+
+在代理协议 v2 中，存在可选的扩展 (TLV) 标签的概念。如果将 TLV 的类型添加到过滤器的配置中，则 TLV 将作为具有用户指定密钥的动态元数据发出。
+
+此实现支持版本 1 和版本 2，它会根据每个连接自动确定存在哪个版本。注意：如果启用了过滤器，则代理协议必须存在于连接上（版本 1 或版本 2），标准不允许通过解析来确定它是否存在。
+
+如果存在协议错误或不受支持的地址系列（例如 AF_UNIX），则连接将关闭并抛出错误。
+
+- 此过滤器应配置为 URL 类型`type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol`。
+- [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/proxy_protocol/v3/proxy_protocol.proto#envoy-v3-api-msg-extensions-filters-listener-proxy-protocol-v3-proxyprotocol)
+
+### 统计数据
+
+该过滤器发出以下统计数据：
+
+|名称 |类型 |描述|
+|--------------------------------|------|-------------|
+|downstream_cx_proxy_proto_error |计数器 |代理协议错误总数|
+
+
 ## TLS Inspector
-### Example
-### Statistics
+
+TLS 检查器侦听器过滤器允许检测传输是否显示为 TLS 或纯文本，如果是 TLS，它会检测来自客户端的 [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication) 和/或 [应用层协议协商](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation)。这可用于通过 
+[FilterChainMatch](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener_components.proto#envoy-v3-api-field-config-listener-v3-filterchainmatch-application-protocols)
+的
+[server_names](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener_components.proto#envoy-v3-api-field-config-listener-v3-filterchainmatch-server-names) 
+和/或 
+[application_protocols](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener_components.proto#envoy-v3-api-field-config-listener-v3-filterchainmatch-application-protocols)
+选择
+[FilterChain](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener_components.proto#envoy-v3-api-msg-config-listener-v3-filterchain)。
+
+- [SNI](https://www.envoyproxy.io/docs/envoy/v1.28.7/faq/configuration/sni#faq-how-to-setup-sni)
+- 此过滤器应使用类型 URL `type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector` 配置。
+- [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/tls_inspector/v3/tls_inspector.proto#envoy-v3-api-msg-extensions-filters-listener-tls-inspector-v3-tlsinspector)
+
+### 例子
+
+示例过滤器配置可能是：
+
+```yaml
+listener_filters:
+- name: tls_inspector
+  typed_config:
+    "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+```
+
+### 统计数据
+
+此过滤器有一个以 *tls_inspector* 为根的统计树，其统计数据如下：
+
+|名称 |类型 |描述|
+|------------------------------------|-----------------|------------------|
+|client_hello_too_large |计数器 |总共收到不合理的过大客户端 hello|
+|tls_found |计数器 |发现 TLS 的总次数|
+|tls_not_found |计数器 |未找到 TLS 的总次数|
+|alpn_found |计数器 |[应用层协议协商](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation)成功的总次数|
+|alpn_not_found |计数器 |[应用层协议协商](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation)失败的总次数|
+|sni_found |计数器 |找到 [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication) 的总次数|
+|sni_not_found |计数器 |未找到 [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication) 的总次数|
+|bytes_processed |直方图 |记录大小，记录 tls_inspector 在分析 tls 使用情况时处理的字节数。如果连接使用 TLS：这是客户端 hello 的大小。如果客户端 hello 太大，则记录的值将为 64KiB，这是最大客户端 hello 大小。如果连接不使用 TLS：这是检查器确定连接未使用 TLS 之前处理的字节数。如果连接提前终止，并且我们没有足够的字节来应对上述任何一种情况，则不会记录任何内容。|
