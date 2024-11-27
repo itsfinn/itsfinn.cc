@@ -216,11 +216,11 @@ listener_filters:
 
 ## Original Destination
 
-### Linux
+**Linux**
 
 当连接已被 iptables REDIRECT 目标重定向，或者被 iptables TPROXY 目标结合设置侦听器的“透明”选项重定向时，原始目标侦听器过滤器会读取 SO_ORIGINAL_DST 套接字选项集。
 
-### Windows
+**Windows**
 
 当连接被应用于容器端点的 [HNS](https://docs.microsoft.com/en-us/virtualization/windowscontainers/container-networking/architecture#container-network-management-with-host-network-service) 策略重定向时，原始目标侦听器过滤器会读取设置的 SO_ORIGINAL_DST 套接字选项。要使此过滤器正常工作，必须在侦听器上设置 [traffic_direction](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/config/listener/v3/listener.proto#envoy-v3-api-field-config-listener-v3-listener-traffic-direction)。这意味着需要一个单独的侦听器来处理入站和出站流量。
 
@@ -243,7 +243,7 @@ Envoy 中的后续处理将恢复的目标地址视为连接的本地地址，�
 [原始目标集群](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/upstream/service_discovery#arch-overview-service-discovery-types-original-destination)
 可用于将 HTTP 请求或 TCP 连接转发到恢复的目标地址。
 
-### 内部监听器
+**内部监听器**
 
 原始目标侦听器过滤器读取由
 [内部侦听器](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/other_features/internal_listener#config-internal-listener)
@@ -257,7 +257,7 @@ Envoy 中的后续处理将恢复的目标地址视为连接的本地地址，�
 - *envoy.filters.listener.original_dst.source_ip* 为源地址
 
 请注意
-[内部上游传输](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/other_features/internal_listener#config-internal-upstream-transport)
+[internal upstream transport](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/other_features/internal_listener#config-internal-upstream-transport)
 应用于将动态元数据从端点主机传递到套接字元数据和(或)通过用户空间套接字与上游连接共享的过滤器状态对象到内部侦听器。
 
 - 此过滤器 URL 类型应配置为`type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst`。
@@ -277,17 +277,17 @@ Envoy 中的后续处理将恢复的目标地址视为连接的本地地址，�
 > **注意**
 > Linux 上需要 CAP_NET_ADMIN 功能。
 
-### 与 Proxy Protocol 交互
+**与 Proxy Protocol 交互**
 
 如果连接的源地址尚未转换或代理，则 Envoy 可以简单地使用现有的连接信息来构建正确的下游远程地址。但是，如果不是这样，则可以使用
 [代理协议过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/listeners/listener_filters/proxy_protocol#config-listener-filters-proxy-protocol)
 来提取下游远程地址。
 
-### IP 版本支持
+**IP 版本支持**
 
 该过滤器支持 IPv4 和 IPv6 地址。请注意，上游连接必须支持使用的版本。
 
-### 额外设置
+**额外设置**
 
 使用的下游远程地址很可能是全局可路由的。默认情况下，从上游主机返回该地址的数据包不会通过 Envoy 路由。必须配置网络以强制将 IP 被 Envoy 复制的任何流量路由回 Envoy 主机。
 
@@ -307,7 +307,7 @@ ip -6 路由添加本地::/0 dev lo 表 100
 echo 1 > /proc/sys/net/ipv4/conf/eth0/route_localnet
 ```
 
-### 监听器配置示例
+**监听器配置示例**
 
 以下示例将 Envoy 配置为对端口 8888 上的所有连接使用原始源。它使用代理协议来确定下游远程地址。所有上游数据包都标记为 123。
 
@@ -342,7 +342,7 @@ listeners:
 - 此过滤器应配置为 URL 类型`type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol`。
 - [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/proxy_protocol/v3/proxy_protocol.proto#envoy-v3-api-msg-extensions-filters-listener-proxy-protocol-v3-proxyprotocol)
 
-### 统计数据
+**统计数据**
 
 该过滤器发出以下统计数据：
 
@@ -366,7 +366,7 @@ TLS 检查器侦听器过滤器允许检测传输是否显示为 TLS 或纯文�
 - 此过滤器应使用类型 URL `type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector` 配置。
 - [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/tls_inspector/v3/tls_inspector.proto#envoy-v3-api-msg-extensions-filters-listener-tls-inspector-v3-tlsinspector)
 
-### 例子
+**例子**
 
 示例过滤器配置可能是：
 
@@ -377,7 +377,7 @@ listener_filters:
     "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
 ```
 
-### 统计数据
+**统计数据**
 
 此过滤器有一个以 *tls_inspector* 为根的统计树，其统计数据如下：
 
