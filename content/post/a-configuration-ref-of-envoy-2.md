@@ -178,7 +178,7 @@ listener_filters:
 |http2_found |计数器 |发现 HTTP/2 的总次数|
 |http_not_found |计数器 |未找到 HTTP 协议的总次数|
 
-## 本地速率限制过滤器
+## Local rate limit
 
 - 本地速率限制[架构概述](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/other_features/local_rate_limiting#arch-overview-local-rate-limit)
 - 此过滤器 URL 类型应配置为 `type.googleapis.com/envoy.extensions.filters.listener.local_ratelimit.v3.LocalRateLimit`。
@@ -296,14 +296,14 @@ Envoy 中的后续处理将恢复的目标地址视为连接的本地地址，�
 我们可以使用以下命令集来确保所有标有 *X*（示例中假设为 123）的 ipv4 和 ipv6 流量都能正确路由。请注意，此示例假设 *eth0* 是默认出站接口。
 
 ```text
-iptables -t mangle -I PREROUTING -m mark --mark 123 -j CONNMARK --save-mark
-iptables -t mangle -I OUTPUT -m connmark --mark 123 -j CONNMARK --restore-mark
-ip6tables -t mangle -I PREROUTING -m mark --mark 123 -j CONNMARK --save-mark
-ip6tables -t mangle -I OUTPUT -m connmark --mark 123 -j CONNMARK --restore-mark
-ip 规则添加 fwmark 123 查找 100
-ip 路由添加本地 0.0.0.0/0 dev lo 表 100
-ip -6 规则添加 fwmark 123 查找 100
-ip -6 路由添加本地::/0 dev lo 表 100
+iptables  -t mangle -I PREROUTING -m mark     --mark 123 -j CONNMARK --save-mark
+iptables  -t mangle -I OUTPUT     -m connmark --mark 123 -j CONNMARK --restore-mark
+ip6tables -t mangle -I PREROUTING -m mark     --mark 123 -j CONNMARK --save-mark
+ip6tables -t mangle -I OUTPUT     -m connmark --mark 123 -j CONNMARK --restore-mark
+ip rule add fwmark 123 lookup 100
+ip route add local 0.0.0.0/0 dev lo table 100
+ip -6 rule add fwmark 123 lookup 100
+ip -6 route add local ::/0 dev lo table 100
 echo 1 > /proc/sys/net/ipv4/conf/eth0/route_localnet
 ```
 
