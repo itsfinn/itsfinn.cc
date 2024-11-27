@@ -178,11 +178,11 @@ listener_filters:
 |http2_found |计数器 |发现 HTTP/2 的总次数|
 |http_not_found |计数器 |未找到 HTTP 协议的总次数|
 
-## 本地速率限制
+## 本地速率限制过滤器
 
-- 本地速率限制`架构概述`
+- 本地速率限制[架构概述](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/other_features/local_rate_limiting#arch-overview-local-rate-limit)
 - 此过滤器 URL 类型应配置为 `type.googleapis.com/envoy.extensions.filters.listener.local_ratelimit.v3.LocalRateLimit`。
-  v3 API 参考
+- [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/local_ratelimit/v3/local_ratelimit.proto#envoy-v3-api-msg-extensions-filters-listener-local-ratelimit-v3-localratelimit)
 
 > **注意**
 >
@@ -190,31 +190,29 @@ listener_filters:
 
 > **注意**
 >
-> 还通过“全局速率限制网络过滤器”支持网络层的全局速率限制。
+> 还通过[全局速率限制网络过滤器](https://www.envoyproxy.io/docs/envoy/v1.28.7/configuration/listeners/network_filters/rate_limit_filter#config-network-filters-rate-limit)支持网络层的全局速率限制。
 
-### 概述
+**概述**
 
-本地速率限制过滤器采用“令牌桶”速率
-限制由过滤器的过滤器链处理的传入套接字。每个套接字
-过滤器处理的每个请求都使用一个令牌，如果没有可用的令牌，套接字将
-立即关闭，无需进一步过滤迭代。
+本地速率限制过滤器将[令牌桶](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/local_ratelimit/v3/local_ratelimit.proto#envoy-v3-api-field-extensions-filters-listener-local-ratelimit-v3-localratelimit-token-bucket)速率限制应用于由过滤器的过滤器链处理的传入套接字。过滤器处理的每个套接字都使用一个令牌，如果没有可用的令牌，则套接字将立即关闭，而无需进一步的过滤器迭代。
+
 
 > **注意**
 >
 > 在当前实现中，每个过滤器和过滤器链都有独立的速率限制。
 
-### 统计数据
+**统计数据**
 
-每个配置的本地速率限制过滤器都有以 *listener_local_ratelimit.\<stat_prefix\>.* 为根的统计信息。
-统计数据如下：
+每个配置的本地速率限制过滤器都有以 *listener_local_ratelimit.\<stat_prefix\>.* 为根的统计信息，其中包含以下统计信息：
+
 
 |名称 |类型 |描述|
 |----------------|-----------------|-------------|
 |rate_limited |计数器|由于超出速率限制而关闭的总套接字数|
 
-### 运行时
+**运行时**
 
-本地速率限制过滤器可以通过“启用”来标记运行时功能配置字段。
+本地速率限制过滤器可以通过运行时特性标志 [enabled](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/listener/local_ratelimit/v3/local_ratelimit.proto#envoy-v3-api-field-extensions-filters-listener-local-ratelimit-v3-localratelimit-runtime-enabled) 配置字段进行启用或禁用。
 
 ## Original Destination
 
