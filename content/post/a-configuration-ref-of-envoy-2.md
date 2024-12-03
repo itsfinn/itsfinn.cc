@@ -172,11 +172,11 @@ listener_filters:
 
 |名称 |类型 |描述|
 |----------------|-----------------|---------------------------------------------------------------|
-|read_error |计数器 |总读取错误|
-|http10_found |计数器 |发现 HTTP/1.0 的总次数|
-|http11_found |计数器 |发现 HTTP/1.1 的总次数|
-|http2_found |计数器 |发现 HTTP/2 的总次数|
-|http_not_found |计数器 |未找到 HTTP 协议的总次数|
+|read_error |Counter |总读取错误|
+|http10_found |Counter |发现 HTTP/1.0 的总次数|
+|http11_found |Counter |发现 HTTP/1.1 的总次数|
+|http2_found |Counter |发现 HTTP/2 的总次数|
+|http_not_found |Counter |未找到 HTTP 协议的总次数|
 
 ## Local rate limit
 
@@ -208,7 +208,7 @@ listener_filters:
 
 |名称 |类型 |描述|
 |----------------|-----------------|-------------|
-|rate_limited |计数器|由于超出速率限制而关闭的总套接字数|
+|rate_limited |Counter|由于超出速率限制而关闭的总套接字数|
 
 **运行时**
 
@@ -348,7 +348,7 @@ listeners:
 
 |名称 |类型 |描述|
 |--------------------------------|------|-------------|
-|downstream_cx_proxy_proto_error |计数器 |代理协议错误总数|
+|downstream_cx_proxy_proto_error |Counter |代理协议错误总数|
 
 
 ## TLS Inspector
@@ -383,14 +383,14 @@ listener_filters:
 
 |名称 |类型 |描述|
 |------------------------------------|-----------------|------------------|
-|client_hello_too_large |计数器 |总共收到不合理的过大客户端 hello|
-|tls_found |计数器 |发现 TLS 的总次数|
-|tls_not_found |计数器 |未找到 TLS 的总次数|
-|alpn_found |计数器 |[应用层协议协商](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation)成功的总次数|
-|alpn_not_found |计数器 |[应用层协议协商](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation)失败的总次数|
-|sni_found |计数器 |找到 [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication) 的总次数|
-|sni_not_found |计数器 |未找到 [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication) 的总次数|
-|bytes_processed |直方图 |记录大小，记录 tls_inspector 在分析 tls 使用情况时处理的字节数。如果连接使用 TLS：这是客户端 hello 的大小。如果客户端 hello 太大，则记录的值将为 64KiB，这是最大客户端 hello 大小。如果连接不使用 TLS：这是检查器确定连接未使用 TLS 之前处理的字节数。如果连接提前终止，并且我们没有足够的字节来应对上述任何一种情况，则不会记录任何内容。|
+|client_hello_too_large |Counter |总共收到不合理的过大客户端 hello|
+|tls_found |Counter |发现 TLS 的总次数|
+|tls_not_found |Counter |未找到 TLS 的总次数|
+|alpn_found |Counter |[应用层协议协商](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation)成功的总次数|
+|alpn_not_found |Counter |[应用层协议协商](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation)失败的总次数|
+|sni_found |Counter |找到 [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication) 的总次数|
+|sni_not_found |Counter |未找到 [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication) 的总次数|
+|bytes_processed |Histogram |记录大小，记录 tls_inspector 在分析 tls 使用情况时处理的字节数。如果连接使用 TLS：这是客户端 hello 的大小。如果客户端 hello 太大，则记录的值将为 64KiB，这是最大客户端 hello 大小。如果连接不使用 TLS：这是检查器确定连接未使用 TLS 之前处理的字节数。如果连接提前终止，并且我们没有足够的字节来应对上述任何一种情况，则不会记录任何内容。|
 
 
 **运行时**
