@@ -101,3 +101,70 @@ Envoy 官网配置指南的中文翻译(监听):网络过滤器
 
 - 此过滤器应配置为 URL 类型 `type.googleapis.com/envoy.extensions.filters.network.direct_response.v3.Config`
 - [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/network/direct_response/v3/config.proto#envoy-v3-api-msg-extensions-filters-network-direct-response-v3-config)
+
+# Dubbo Proxy
+
+dubbo代理过滤器对dubbo客户端与服务端之间的RPC协议进行解码，解码后的RPC信息转换为元数据，元数据包括基本的请求ID，请求类型，序列化类型以及路由所需要的服务名，方法名，参数名，参数值。
+
+- 此过滤器应配置为 URL 类型`type.googleapis.com/envoy.extensions.filters.network.dubbo_proxy.v3.DubboProxy`。
+- [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/network/dubbo_proxy/v3/dubbo_proxy.proto#envoy-v3-api-msg-extensions-filters-network-dubbo-proxy-v3-dubboproxy)
+
+## 统计信息
+
+每个配置的 dubbo 代理过滤器都有以 *dubbo.\<stat_prefix\>.* 为根的统计信息，其中包含以下统计信息：
+
+|名称 |类型 |描述|
+|----------------------------------------|-------- |--------------------------------------------------------|
+|request|Counter|总请求数|
+|request_twoway |Counter |双向请求总数|
+|request_oneway |Counter |单向请求总数|
+|request_event |Counter |事件请求总数|
+|request_decoding_error |Counter |总解码错误请求数|
+|request_decoding_success |Counter |解码成功请求总数|
+|request_active |Gauge |总活跃请求数|
+|response |Counter |总回应数|
+|response_success |Counter |成功响应总数|
+|response_error |Counter |协议解析错误的响应总数|
+|response_error_caused_connection_close |Counter |由下游连接关闭引起的响应总数|
+|response_business_exception |Counter |业务层返回的协议包含异常信息的响应总数|
+|response_decoding_error |Counter |总解码错误响应|
+|response_decoding_success |Counter |解码成功响应总数|
+|response_error |Counter |协议解析错误的响应总数|
+|local_response_success |Counter |本地响应总数|
+|local_response_error |Counter |编码错误的本地响应总数|
+|local_response_business_exception |Counter |协议包含业务异常的本地响应总数|
+|cx_destroy_local_with_active_rq |Counter|通过活动查询本地破坏的连接|
+|cx_destroy_remote_with_active_rq |Counter|通过活动查询远程破坏的连接|
+
+## 基于dubbo代理过滤器实现自定义过滤器
+
+如果要基于dubbo协议实现自定义的filter，dubbo类似HTTP的代理filter也提供了很方便的扩展方式，第一步就是实现DecoderFilter接口，并给filter命名，比如testFilter，第二步就是添加你的配置，配置方法参考下面的示例
+
+```yaml
+filter_chains:
+- filters:
+  - name: envoy.filters.network.dubbo_proxy
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.network.dubbo_proxy.v3.DubboProxy
+      stat_prefix: dubbo_incomming_stats
+      protocol_type: Dubbo
+      serialization_type: Hessian2
+      multiple_route_config:
+        name: local_route
+        route_config:
+        - interface: org.apache.dubbo.demo.DemoService
+          routes:
+          - match:
+              method:
+                name:
+                  exact: sayHello
+            route:
+              cluster: user_service_dubbo_server
+      dubbo_filters:
+      - name: envoy.filters.dubbo.testFilter
+        typed_config:
+          "@type": type.googleapis.com/google.protobuf.Struct
+          value:
+            name: test_service
+      - name: envoy.filters.dubbo.router
+```
