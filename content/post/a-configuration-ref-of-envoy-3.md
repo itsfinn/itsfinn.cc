@@ -297,7 +297,7 @@ clusters:
 
 通用代理是一种网络过滤器，可用于实现新协议代理。提供了一个扩展点，让用户配置特定的编解码器。开发人员只需实现编解码器来解析二进制文件，然后让用户在通用代理中配置编解码器。通用代理将处理其余工作。
 
-# 抽象请求/响应
+## 抽象请求/响应
 
 请求/响应的抽象是通用代理的核心。不同的L7协议可能具有不同的请求/响应数据结构。在通用代理中，编解码器是扩展的，可以由用户配置，但其他模块是通用的，可以由不同的协议共享。这些不同协议的不同请求/响应数据结构需要抽象并在一个通用的抽象中进行管理。
 
@@ -307,7 +307,7 @@ clusters:
 
 如果开发者想要实现一个新的协议代理，只需要实现编解码器来将二进制数据解析为具体的请求/响应，并确保它们实现了`Request`或`Response`。这比实现新的网络过滤器要容易得多。
 
-# 可扩展的匹配器和路由
+## 可扩展的匹配器和路由
 
 [通用匹配器 API](https://www.envoyproxy.io/docs/envoy/v1.28.7/intro/arch_overview/advanced/matching/matching_api#arch-overview-matching-api) 用于构建通用代理的路由表。开发人员可以扩展输入和匹配器以支持新的匹配逻辑。
 
@@ -358,11 +358,11 @@ clusters:
                           "@type": type.googleapis.com/envoy.extensions.filters.network.generic_proxy.action.v3.RouteAction
 ```
 
-# 异步编解码器 API
+## 异步编解码器 API
 
 通用代理提供了一个扩展点，让开发人员可以实现特定于其自身协议的编解码器。编解码器 API 设计为异步的，以避免阻塞工作线程。异步编解码器 API 可以通过将解析工作卸载到特定硬件来加速编解码器。
 
-# 可配置连接
+## 可配置连接
 
 不同的协议可能具有不同的连接生命周期或连接管理。通用代理提供了额外的选项，让编解码器开发人员可以配置连接生命周期和连接管理。
 
@@ -370,7 +370,7 @@ clusters:
 
 开发者还可以直接在编解码器中操作下行连接和上行连接。这让开发者对连接有了更多的控制权。
 
-# 编解码器实现示例
+## 编解码器实现示例
 
 社区已经实现了一个基于通用代理的 [dubbo codec](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/network/generic_proxy/codecs/dubbo/v3/dubbo.proto#envoy-v3-api-msg-extensions-filters-network-generic-proxy-codecs-dubbo-v3-dubbocodecconfig)。dubbo codec 复杂度适中，是一个很好的例子，可以展示如何为新的协议实现新的 codec。
 
@@ -445,3 +445,138 @@ static_resources:
                 address: localhost
                 port_value: 8080
 ```
+
+# Golang
+
+Golang 网络过滤器允许 [Golang] 在下游和上游 tcp 数据流期间运行，并使扩展 Envoy 变得更加容易。
+
+该过滤器使用的 Go 插件可以独立于 Envoy 重新编译。
+
+有关过滤器实现的更多详细信息，请参阅[Envoy 的 Golang 扩展提案文档]。
+
+> **警告**
+> Envoy Golang 过滤器设计为在设置 `GODEBUG=cgocheck=0` 环境变量的情况下运行。
+>
+> 这将禁用 cgo 指针检查。
+>
+> 未能设置此环境变量将导致 Envoy 崩溃！
+
+## 开发一个 Go 插件
+
+Envoy 的 Go 插件必须实现 [DownstreamFilter/UpstreamFilter API](https://github.com/envoyproxy/envoy/blob/v1.28.7/contrib/golang/common/go/api/filter.go)。
+
+### 构建 Go 插件
+
+> **注意**
+> 构建 Go 插件动态库时，**必须**使用与 Envoy 的 glibc 版本一致的 Go 版本。
+
+确保兼容 Go 版本的一种方法是使用 Envoy 的 bazel 设置提供的 Go 二进制文件：
+
+```console
+$ bazel run @go_sdk//:bin/go -- version
+go version goX.YZ linux/amd64
+```
+
+例如，要为 `foo` 插件构建 `.so`，您可以运行：
+
+```console
+$ bazel run @go_sdk//:bin/go build --buildmode=c-shared  -v -o path/to/output/libfoo.so path/to/src/foo
+```
+
+## 配置
+
+> **提示**
+> 此过滤器应使用类型 URL `type.googleapis.com/envoy.extensions.filters.http.golang.v3alpha.Config` 进行配置。
+
+预先构建的 Golang 网络过滤器`my_plugin.so`可能配置如下：
+
+```yaml
+      - name: envoy.filters.network.golang
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.golang.v3alpha.Config
+          is_terminal_filter: true
+          library_id: simple
+          library_path: "/lib/simple.so"
+          plugin_name: simple
+          plugin_config:
+            "@type": type.googleapis.com/xds.type.v3.TypedStruct
+            value:
+              echo_server_addr: echo_service
+```
+
+# Kafka Broker 过滤器
+
+Apache Kafka 代理过滤器会解码 [Apache Kafka](https://kafka.apache.org/) 的客户端协议，包括有效负载中的请求和响应。支持 [Kafka 3.5.1](http://kafka.apache.org/35/protocol.html#protocol_api_keys) 中的消息版本（ConsumerGroupHeartbeat 除外）。该过滤器会尝试不影响客户端和代理之间的通信，因此无法解码的消息（由于 Kafka 客户端或代理运行的版本比此过滤器支持的版本要新）会按原样转发。
+
+- 此过滤器应配置为 URL 类型`type.googleapis.com/envoy.extensions.filters.network.kafka_broker.v3.KafkaBroker`。
+- [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.28.7/api-v3/extensions/filters/network/kafka_broker/v3/kafka_broker.proto#envoy-v3-api-msg-extensions-filters-network-kafka-broker-v3-kafkabroker)
+
+> **注意**
+> Kafka 代理过滤器仅包含在 [contrib 镜像](https://www.envoyproxy.io/docs/envoy/v1.28.7/start/install#install-contrib) 中
+
+> **注意**
+> kafka_broker 过滤器处于实验阶段，目前正在积极开发中。随着时间的推移，功能将不断扩展，配置结构也可能会发生变化。
+
+## 配置
+
+Kafka Broker 过滤器应该与 TCP 代理过滤器链接在一起，如下面的配置片段所示：
+
+```yaml
+listeners:
+- address:
+    socket_address:
+      address: 127.0.0.1 # Host that Kafka clients should connect to.
+      port_value: 19092  # Port that Kafka clients should connect to.
+  filter_chains:
+  - filters:
+    - name: envoy.filters.network.kafka_broker
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.network.kafka_broker.v3.KafkaBroker
+        stat_prefix: exampleprefix
+    - name: envoy.filters.network.tcp_proxy
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+        stat_prefix: tcp
+        cluster: localkafka
+clusters:
+- name: localkafka
+  connect_timeout: 0.25s
+  type: strict_dns
+  lb_policy: round_robin
+  load_assignment:
+    cluster_name: some_service
+    endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1 # Kafka broker's host
+                port_value: 9092 # Kafka broker's port.
+```
+
+Kafka 代理需要宣告 Envoy 监听器端口而不是自己的端口。
+
+```text
+# Listener value needs to be equal to cluster value in Envoy config
+# (will receive payloads from Envoy).
+listeners=PLAINTEXT://127.0.0.1:9092
+
+# Advertised listener value needs to be equal to Envoy's listener
+# (will make clients discovering this broker talk to it through Envoy).
+advertised.listeners=PLAINTEXT://127.0.0.1:19092
+```
+
+## 统计数据
+
+每个配置的 Kafka Broker 过滤器的统计数据都以 *kafka.\<stat_prefix\>.* 为根，并且有多个
+每种消息类型的统计信息。
+
+|Name                    |Type             |描述|
+|------------------------|-----------------|--------------------------------------------------------|
+|request.TYPE            |Counter          |从 Kafka 客户端收到特定类型请求的次数|
+|request.unknown         |Counter          |收到此过滤器无法识别格式的请求的次数|
+|request.failure         |Counter          |收到格式无效的请求或发生其他处理异常的次数|
+|response.TYPE           |Counter          |从 Kafka 代理收到特定类型响应的次数|
+|response.TYPE_duration  |Histogram        |响应生成时间（以毫秒为单位）|
+|response.unknown        |Counter          |收到此过滤器无法识别格式的响应的次数|
+|response.failure        |Counter          |收到格式无效的响应或发生其他处理异常的次数|
