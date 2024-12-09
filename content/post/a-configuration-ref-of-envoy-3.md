@@ -580,3 +580,97 @@ advertised.listeners=PLAINTEXT://127.0.0.1:19092
 |response.TYPE_duration  |Histogram        |响应生成时间（以毫秒为单位）|
 |response.unknown        |Counter          |收到此过滤器无法识别格式的响应的次数|
 |response.failure        |Counter          |收到格式无效的响应或发生其他处理异常的次数|
+
+# Kafka 网格过滤器
+
+
+Apache Kafka 网格过滤器为 
+[Apache Kafka](https://kafka.apache.org/)
+集群封装了一个接口层。
+
+它允许处理下游客户端发送的 Produce（生产者）和 Fetch（消费者）请求。
+
+该过滤器实例收到的请求可以转发到多个集群之一，具体取决于配置的转发规则。
+
+支持从Kafka 3.5.1开始的相应消息版本。
+
+- 此过滤器应配置为 URL 类型`type.googleapis.com/envoy.extensions.filters.network.kafka_mesh.v3alpha.KafkaMesh`。
+- [v3 API 参考](https://www.envoyproxy.io/docs/envoy/v1.26.8/api-v3/extensions/filters/network/kafka_mesh/v3alpha/kafka_mesh.proto#envoy-v3-api-msg-extensions-filters-network-kafka-mesh-v3alpha-kafkamesh)
+
+> **注意**
+> Kafka 网格过滤器仅包含在 [contrib 镜像](https://www.envoyproxy.io/docs/envoy/v1.26.8/start/install#install-contrib) 中
+
+> **注意**
+> kafka_mesh 过滤器处于实验阶段，目前正在积极开发中。随着时间的推移，其功能将不断扩展，配置结构也可能会发生变化。
+
+> **注意**
+> kafka_mesh 过滤器在 Windows 上不起作用（阻止程序正在编译 librdkafka）。
+
+## 配置
+
+下面的示例向我们展示了代理 3 个 Kafka 集群的典型过滤器配置。客户端将连接到 \'127.0.0.1:19092\'，并且它们的消息将根据主题名称分发到集群。
+
+``` yaml
+listeners:
+- address:
+    socket_address:
+      address: 127.0.0.1 # Host that Kafka clients should connect to.
+      port_value: 19092  # Port that Kafka clients should connect to.
+  filter_chains:
+  - filters:
+    - name: envoy.filters.network.kafka_mesh
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.network.kafka_mesh.v3alpha.KafkaMesh
+        advertised_host: "127.0.0.1"
+        advertised_port: 19092
+        upstream_clusters:
+        - cluster_name: kafka_c1
+          bootstrap_servers: cluster1_node1:9092,cluster1_node2:9092,cluster1_node3:9092
+          partition_count: 1
+        - cluster_name: kafka_c2
+          bootstrap_servers: cluster2_node1:9092,cluster2_node2:9092,cluster2_node3:9092
+          partition_count: 1
+        - cluster_name: kafka_c3
+          bootstrap_servers: cluster3_node1:9092,cluster3_node2:9092
+          partition_count: 5
+          producer_config:
+            acks: "1"
+            linger.ms: "500"
+          consumer_config:
+            client.id: "my-envoy-consumer"
+        forwarding_rules:
+        - target_cluster: kafka_c1
+          topic_prefix: apples
+        - target_cluster: kafka_c2
+          topic_prefix: bananas
+        - target_cluster: kafka_c3
+          topic_prefix: cherries
+```
+
+值得注意的是，可以在过滤器链中的 Kafka 代理过滤器之前插入 Kafka 网格过滤器，以捕获请求处理指标。
+
+## 注释
+
+1. 使用嵌入式 [librdkafka](https://github.com/confluentinc/librdkafka) 生产者/消费者发送/接收记录。
+2. librdkafka 编译时没有使用 ssl、lz4、gssapi，因此不支持相关的自定义配置选项。
+3. 启动时未发现无效的自定义配置（仅在初始化适当的生产者或消费者时）。引用这些集群的请求将关闭连接并失败。
+4. 引用与任何规则都不匹配的主题的请求将关闭连接并失败。这通常不应该发生（客户端首先请求元数据，然后它们应该首先失败并出现“无可用代理”），但如果有人通过连接定制二进制有效负载，则可能发生这种情况。
+
+## 生产者代理
+
+1. 指向上游 Kafka 集群的嵌入式 librdkafka 生产者是每个 Envoy 工作线程创建的（因此可以使用 *--concurrency* 选项增加吞吐量，从而允许更多生产者处理请求）。
+2. 仅支持版本 2 的 ProduceRequests（这意味着像 0.8 这样的非常旧的生产者将不受支持）。
+3. Python 生产者需要设置至少 1.0.0 的 API 版本，以便他们发送的生产请求将具有 magic 等于 2 的记录。
+4. Kafka 生产器 'acks' 属性的下游处理委托给上游客户端。例如，如果上游客户端配置为使用 acks=0，则响应将尽快发送给下游客户端（即使它们有非零的 acks！）。
+5. 由于过滤器将单个生产者请求拆分为单独的记录，因此可能只有部分记录的交付失败。在这种情况下，返回给上游客户端的响应是失败的，但是部分记录可能已附加到目标集群中。
+6. 由于上述拆分，记录不一定是一条接一条地附加的（因为它们不会作为单个请求发送到上游）。想要避免这种情况的用户可能需要查看下游生产者配置：'linger.ms' 和 'batch.size'。
+
+## 消费者代理
+
+1. 目前，消费者代理仅支持有状态代理 - Envoy 使用指向上游的 librdkafka 消费者来接收记录，并且仅在请求更多数据时才这样做。
+2. 用户可能需要查看消费者的配置属性*group.id*来管理消费者的偏移提交行为（在 Envoy 重启时有意义的）。
+3. 当请求消费者位置时，响应始终包含 offset = 0（参见*list_offsets.cc*）。
+4. 提供了记录偏移信息，但没有提供记录批量偏移增量——据观察，Apache Kafka Java 客户端尽管接收到记录，但不会更新其位置（参见*fetch_record_converter.cc*）。
+5. 如果收集到至少 3 条记录，则 Fetch 响应将发送到下游（请参阅 *fetch.cc*）。当前实现将忽略请求中有关请求字节等的数据。
+6. 在被视为已完成（见上文）或 5 秒的硬编码超时（见 *fetch.cc*）过后，将发送 Fetch 响应。请求指定的超时将被忽略。
+7. 只要有针对这些主题的传入请求，消费者就会轮询这些主题的记录，而不考虑分区。鼓励用户确保所有分区都被使用，以避免出现以下情况：例如，我们只从分区 0 获取记录，但代理会收到分区 0（发送到下游）和分区 1（保存在内存中，直到有人对它们感兴趣）的记录。
