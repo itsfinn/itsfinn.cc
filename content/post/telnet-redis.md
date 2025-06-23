@@ -10,7 +10,7 @@ Tags: ["Redis", "Telnet", "工具"]
 
 输入 Redis 命令，转换为对应的 Telnet 命令，方便在没有 Redis-cli 的情况下使用 Telnet 访问 Redis。
 
-```html
+{{< rawhtml >}}
 <div class="container">
     <div class="input-group">
         <label for="redisCommand">输入 Redis 命令：</label>
@@ -121,4 +121,4 @@ Tags: ["Redis", "Telnet", "工具"]
         convertToTelnet();
     });
 </script>
-```
+{{< /rawhtml >}}
