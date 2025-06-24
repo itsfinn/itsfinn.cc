@@ -10,6 +10,9 @@ Tags: ["Redis", "Telnet", "工具"]
 
 输入 Redis 命令，转换为对应的 Telnet 命令，方便在没有 Redis-cli 的情况下使用 Telnet 访问 Redis。
 
+如何退出：
+按下键盘上的“Ctrl”和“]”键。 然后输入“q”命令，按回车键。
+
 {{< rawhtml >}}
 <div class="container">
     <div class="input-group">
